@@ -1,0 +1,111 @@
+/* Recalce - Global Styles */
+
+/* Design tokens */
+:root {
+  --surface: #fdf9f4;
+  --surface-dim: #ddd9d5;
+  --surface-bright: #fdf9f4;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f7f3ee;
+  --surface-container: #f1ede8;
+  --surface-container-high: #ebe8e3;
+  --surface-container-highest: #e6e2dd;
+  --on-surface: #1c1c19;
+  --on-surface-variant: #544435;
+  --inverse-surface: #31302d;
+  --inverse-on-surface: #f4f0eb;
+  --outline: #877363;
+  --outline-variant: #dac2af;
+  --primary: #8c5000;
+  --on-primary: #ffffff;
+  --primary-container: #f2921c;
+  --on-primary-container: #5d3400;
+  --secondary: #5f5e5e;
+  --on-secondary: #ffffff;
+  --secondary-container: #e4e2e1;
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #93000a;
+  --surface-variant: #e6e2dd;
+  --background: #faf6f1;
+
+  --radius-sm: 0.25rem;
+  --radius: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+
+  --shadow-1: 0px 4px 20px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0px 8px 30px rgba(0, 0, 0, 0.08);
+
+  --font: 'Hanken Grotesk', system-ui, sans-serif;
+  --container-width: 85%;
+  --container-max: 1200px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font);
+  background-color: var(--background);
+  color: var(--on-surface);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: var(--font);
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+input, select, textarea {
+  font-family: var(--font);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary-container) !important;
+  box-shadow: 0 0 0 3px rgba(242, 146, 28, 0.2) !important;
+}
+
+.card {
+  background: var(--surface-container-lowest);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+  border: 1px solid #eeeae5;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}
+
+/* Hide scrollbar but allow scrolling */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Numeric columns aligned */
+.tabular-nums { font-variant-numeric: tabular-nums; }

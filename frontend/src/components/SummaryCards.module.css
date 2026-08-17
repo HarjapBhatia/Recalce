@@ -1,0 +1,180 @@
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  height: 100%;
+}
+
+.cardTitle {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+  color: var(--on-surface);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  flex: 1;
+}
+
+.statCell {
+  background: var(--surface-container-low);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.borderAccentNeutral {
+  border-left: 4px solid var(--outline-variant);
+}
+
+.borderAccentError {
+  border-left: 4px solid var(--error);
+}
+
+.borderAccentWarning {
+  border-left: 4px solid var(--primary-container);
+}
+
+.statLabel {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--secondary);
+  margin-bottom: 4px;
+}
+
+.statValue {
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 40px;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
+}
+
+.errorText { color: var(--error); }
+.warningText { color: var(--primary-container); }
+
+/* Reconciliation check card */
+.checkCard {
+  justify-content: space-between;
+}
+
+.checkRows {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  justify-content: center;
+}
+
+.checkRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--outline-variant);
+}
+
+.checkRowBold {
+  border-bottom: none;
+  padding-bottom: 0;
+  padding-top: 8px;
+}
+
+.checkLabel {
+  font-size: 14px;
+  color: var(--secondary);
+  line-height: 20px;
+}
+
+.checkValue {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--on-surface);
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.checkLabelBold {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--secondary);
+  line-height: 20px;
+}
+
+.checkValueBold {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--on-surface);
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.balanceBadge {
+  background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.balanceText {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1b5e20;
+}
+
+.warnBadge {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.warnText {
+  font-size: 14px;
+  font-weight: 500;
+  color: #92400e;
+}
+
+/* Skeleton */
+.skeleton {
+  height: 180px;
+  background: linear-gradient(90deg, var(--surface-container-low) 25%, var(--surface-container) 50%, var(--surface-container-low) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
