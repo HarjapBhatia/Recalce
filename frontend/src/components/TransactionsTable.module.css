@@ -424,6 +424,41 @@
   margin-bottom: 12px;
 }
 
+.memberList {
+  list-style-type: disc;
+  padding-left: 24px;
+  margin: 8px 0 0 0;
+  color: var(--on-surface-variant);
+}
+
+.memberItem {
+  margin-bottom: 6px;
+}
+
+.combinationsContainer {
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--surface-container);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--outline-variant);
+}
+
+.combinationsHeader {
+  font-weight: 600;
+  color: var(--on-surface);
+  margin-bottom: 12px;
+}
+
+.combinationItem {
+  margin-bottom: 12px;
+  color: var(--on-surface-variant);
+  line-height: 1.4;
+}
+
+.combinationItem:last-child {
+  margin-bottom: 0;
+}
+
 /* Review panel actions */
 .reviewActions {
   display: flex;

@@ -1,16 +1,11 @@
 import styles from './SummaryCards.module.css'
 
-function formatCurrency(val) {
-  if (val == null) return '$0.00'
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val)
-}
-
 function formatCount(n) {
   if (n == null) return '0'
   return n.toLocaleString('en-US')
 }
 
-export default function SummaryCards({ summary }) {
+export default function SummaryCards({ summary, tabCounts }) {
   if (!summary) {
     // Skeleton state
     return (
@@ -30,19 +25,19 @@ export default function SummaryCards({ summary }) {
     exact_matches,
     date_shift_matches,
     fee_adjusted_matches,
+    many_to_one_matches,
     unreconciled_internal,
-    unreconciled_bank,
     anomalies_flagged,
     total_bank,
   } = summary
 
-  const totalMatched = exact_matches + date_shift_matches + fee_adjusted_matches
-  const totalUnreconciled = unreconciled_internal + unreconciled_bank
-  const totalRecords = total_internal + total_bank
-
-  // Compute totals for reconciliation check card
-  // These come from the results if available; we'll compute approximates from summary
-  const matchedPct = totalRecords > 0 ? Math.round((totalMatched / total_internal) * 100) : 0
+  // Use server-computed tab counts which are accurate and mutually exclusive.
+  // Fallback to summing summary fields if tab_counts is not yet available.
+  const totalMatched = tabCounts
+    ? tabCounts.matched
+    : exact_matches + date_shift_matches + fee_adjusted_matches + many_to_one_matches
+  // Unreconciled = ledger rows with no match (unreconciled_internal from CSV)
+  const totalUnreconciled = unreconciled_internal
 
   return (
     <section className={styles.grid}>

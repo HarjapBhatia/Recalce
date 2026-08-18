@@ -1,11 +1,11 @@
 """
 app/services/matching_engine.py
 ---------------------------------
-Four-pass waterfall reconciliation engine.
+Five-pass waterfall reconciliation engine.
 
-All four passes execute in strict order. Each pass queries only for rows
-that are still in PENDING status, so once a row is claimed by an earlier
-pass it is never touched again.
+All passes execute in strict order. Each pass operates only on rows that
+remain PENDING after earlier passes, so once a row is claimed it is never
+re-examined.
 
 Pass 1 -- EXACT:
   Same transaction_id (or bank_reference_id), same amount, same calendar day.
@@ -21,8 +21,19 @@ Pass 3 -- FEE_ADJUSTED:
   (amount * (1 - FEE_TOLERANCE_MAX)) and amount. Covers the common case where
   a payment processor deducts a small fee before settling.
 
-Pass 4 -- UNRECONCILED:
-  Any PENDING row remaining after passes 1-3 could not be matched. Each
+Pass 4 -- MANY_TO_ONE:
+  Subset-sum pass: finds groups of 2-MAX_GROUP_SIZE internal transactions from
+  the same merchant that together sum (within fee tolerance) to a single bank
+  deposit. Uses branch-and-bound DFS in integer cents to enumerate all valid
+  subsets. Deposits with a single valid subset are MATCHED; deposits with
+  multiple competing subsets are UNDER_REVIEW. Results are persisted as
+  ReconciliationGroup + ReconciliationGroupMember rows, with a corresponding
+  ReconciliationResult row (match_type=MANY_TO_ONE) per internal transaction in
+  MATCHED groups, and a single bank-side ReconciliationResult for UNDER_REVIEW
+  groups.
+
+Pass 5 -- UNRECONCILED:
+  Any PENDING row remaining after passes 1-4 could not be matched. Each
   surviving internal row and bank row gets its own UNRECONCILED result record.
 
 The function is a plain Python function, not a Celery task. The match task
@@ -38,7 +49,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.bank_statement import BankStatement, BankStatus
 from app.models.internal_ledger import InternalLedger, LedgerStatus
-from app.models.reconciliation_result import MatchType, ReconciliationResult, ResultStatus
+from app.models.reconciliation_result import (
+    MatchType,
+    ReconciliationGroup,
+    ReconciliationGroupMember,
+    ReconciliationResult,
+    ResultStatus,
+)
+from app.services.subset_sum import BankDeposit, CandidateRow, run_many_to_one_pass
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +142,8 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
         "exact": 0,
         "date_shift": 0,
         "fee_adjusted": 0,
+        "many_to_one": 0,           # MATCHED group deposits resolved by Pass 4
+        "under_review_groups": 0,   # UNDER_REVIEW group deposits from Pass 4
         "unreconciled_internal": 0,
         "unreconciled_bank": 0,
     }
@@ -245,7 +265,117 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
             summary["fee_adjusted"] += 1
 
     # -------------------------------------------------------------------
-    # Pass 4: UNRECONCILED -- remaining unmatched rows
+    # Pass 4: MANY_TO_ONE -- subset-sum group settlement matching
+    # -------------------------------------------------------------------
+    # Convert remaining ORM objects to lightweight dataclasses so the
+    # subset_sum module stays free of SQLAlchemy dependencies and is
+    # independently unit-testable.
+    candidate_rows = [
+        CandidateRow(
+            db_id=row.id,
+            transaction_id=row.transaction_id,
+            merchant_id=row.merchant_id,
+            amount=row.amount,
+            timestamp_date=row.timestamp.date(),
+        )
+        for row in unmatched_internal.values()
+    ]
+    bank_deposits = [
+        BankDeposit(
+            db_id=row.id,
+            bank_reference_id=row.bank_reference_id,
+            deposit_amount=row.deposit_amount,
+            settlement_date=row.settlement_date,
+        )
+        for row in unmatched_bank.values()
+    ]
+
+    groups_to_insert: list[ReconciliationGroup] = []
+    members_to_insert: list[ReconciliationGroupMember] = []
+
+    if candidate_rows and bank_deposits:
+        n1_groups, consumed_int_ids, consumed_bank_ids = run_many_to_one_pass(
+            unmatched_internal=candidate_rows,
+            unmatched_bank=bank_deposits,
+            settlement_window_days=settings.SETTLEMENT_WINDOW_DAYS,
+            fee_tolerance_max=settings.FEE_TOLERANCE_MAX,
+            max_candidate_pool=settings.MAX_CANDIDATE_POOL,
+            max_group_size=settings.MAX_GROUP_SIZE,
+        )
+
+        for grp in n1_groups:
+            deposit = grp.bank_deposit
+            fee_decimal = Decimal(grp.fee_deducted_cents) / Decimal("100")
+            total_internal_decimal = deposit.deposit_amount + fee_decimal
+
+            # Build the parent ReconciliationGroup row
+            group_id = uuid.uuid4()
+            group_status = (
+                ResultStatus.MATCHED if grp.status == "MATCHED" else ResultStatus.UNDER_REVIEW
+            )
+            groups_to_insert.append(
+                ReconciliationGroup(
+                    id=group_id,
+                    batch_id=batch_uuid,
+                    bank_txn_id=deposit.db_id,
+                    match_type=MatchType.MANY_TO_ONE,
+                    total_internal_amount=total_internal_decimal,
+                    bank_deposit_amount=deposit.deposit_amount,
+                    fee_deducted=fee_decimal,
+                    status=group_status,
+                    member_count=len(grp.matched_members),
+                    review_metadata=grp.review_metadata,
+                )
+            )
+
+            if grp.status == "MATCHED":
+                # One ReconciliationResult + one GroupMember per internal transaction
+                for member in grp.matched_members:
+                    members_to_insert.append(
+                        ReconciliationGroupMember(
+                            group_id=group_id,
+                            internal_txn_id=member.db_id,
+                        )
+                    )
+                    results_to_insert.append(
+                        ReconciliationResult(
+                            batch_id=batch_uuid,
+                            internal_txn_id=member.db_id,
+                            bank_txn_id=deposit.db_id,
+                            group_id=group_id,
+                            match_type=MatchType.MANY_TO_ONE,
+                            fee_deducted=fee_decimal,
+                            status=ResultStatus.MATCHED,
+                        )
+                    )
+                    # Remove from the unmatched pools so Pass 5 skips them
+                    unmatched_internal.pop(member.db_id, None)
+                    unmatched_bank.pop(deposit.db_id, None)
+
+                summary["many_to_one"] += 1
+
+            else:  # UNDER_REVIEW
+                # One bank-side result row to surface in the Under Review tab
+                results_to_insert.append(
+                    ReconciliationResult(
+                        batch_id=batch_uuid,
+                        internal_txn_id=None,
+                        bank_txn_id=deposit.db_id,
+                        group_id=group_id,
+                        match_type=MatchType.MANY_TO_ONE,
+                        fee_deducted=Decimal("0"),
+                        status=ResultStatus.UNDER_REVIEW,
+                        anomaly_reason=grp.anomaly_reason,
+                    )
+                )
+                # Remove the bank deposit from the unmatched pool; internal
+                # transactions remain UNRECONCILED (safer than marking them matched)
+                unmatched_bank.pop(deposit.db_id, None)
+
+                summary["under_review_groups"] += 1
+
+    # -------------------------------------------------------------------
+    # Pass 5: UNRECONCILED -- remaining unmatched rows
     # -------------------------------------------------------------------
     for int_id, int_row in unmatched_internal.items():
         results_to_insert.append(
@@ -309,6 +439,10 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
             {"status": BankStatus.UNMATCHED}, synchronize_session=False
         )
 
+    if groups_to_insert:
+        db.bulk_save_objects(groups_to_insert)
+    if members_to_insert:
+        db.bulk_save_objects(members_to_insert)
     if results_to_insert:
         db.bulk_save_objects(results_to_insert)
 

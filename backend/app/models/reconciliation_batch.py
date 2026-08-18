@@ -21,7 +21,7 @@ from app.db.session import Base
 if TYPE_CHECKING:
     from app.models.bank_statement import BankStatement
     from app.models.internal_ledger import InternalLedger
-    from app.models.reconciliation_result import BatchValidationError, ReconciliationResult
+    from app.models.reconciliation_result import BatchValidationError, ReconciliationGroup, ReconciliationResult
 
 
 class BatchStatus(str, enum.Enum):
@@ -63,4 +63,7 @@ class ReconciliationBatch(Base):
     )
     validation_errors: Mapped[list["BatchValidationError"]] = relationship(
         "BatchValidationError", back_populates="batch", cascade="all, delete-orphan"
+    )
+    groups: Mapped[list["ReconciliationGroup"]] = relationship(
+        "ReconciliationGroup", back_populates="batch", cascade="all, delete-orphan"
     )

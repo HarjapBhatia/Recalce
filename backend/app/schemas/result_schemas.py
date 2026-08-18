@@ -27,6 +27,8 @@ class ResultSummary(BaseModel):
     exact_matches: int
     date_shift_matches: int
     fee_adjusted_matches: int
+    many_to_one_matches: int
+    under_review_groups: int
     unreconciled_internal: int
     unreconciled_bank: int
     anomalies_flagged: int
@@ -59,6 +61,11 @@ class ResultItem(BaseModel):
     bank_reference_id: str | None = None
     deposit_amount: Decimal | None = None
     settlement_date: date | None = None
+
+    # Group fields for Many-to-One matches
+    group_id: uuid.UUID | None = None
+    member_count: int | None = None
+    review_metadata: str | None = None
 
 
 class ValidationErrorItem(BaseModel):

@@ -50,6 +50,7 @@ function matchTypeLabel(t) {
     case 'EXACT':        return 'Exact Match'
     case 'DATE_SHIFT':   return 'Date Shift'
     case 'FEE_ADJUSTED': return 'Fee Adjusted'
+    case 'MANY_TO_ONE':  return 'Many to One'
     case 'UNRECONCILED': return 'None'
     default: return t || '-'
   }
@@ -64,11 +65,11 @@ function exportToCsv(rows, tabLabel) {
   for (const row of rows) {
     const cells = [
       fmtDate(row.internal_timestamp || row.settlement_date),
-      row.internal_transaction_id || row.bank_reference_id || '',
+      row.is_group ? `Group (${row.member_count} items)` : (row.internal_transaction_id || row.bank_reference_id || ''),
       row.merchant_id || '',
       matchTypeLabel(row.match_type),
       row.status,
-      row.internal_amount || row.deposit_amount || '',
+      row.is_group ? row.deposit_amount : (row.internal_amount || row.deposit_amount || ''),
       row.fee_deducted || '0',
       row.is_anomaly ? 'Yes' : 'No',
       row.anomaly_reason ? `"${row.anomaly_reason.replace(/"/g, '""')}"` : '',
@@ -190,14 +191,63 @@ function SkeletonRow() {
 
 function ReviewPanel({ row, onMarkMatched, onClose }) {
   const [marking, setMarking]     = useState(false)
+  const [selectedOption, setSelectedOption] = useState(null)
 
   const anomaly = row.is_anomaly
 
   async function handleMarkMatched() {
     setMarking(true)
-    await onMarkMatched(row.id)
+    let selectedTxnIds = null
+    if (selectedOption !== null && row.review_metadata) {
+      try {
+        const combinations = JSON.parse(row.review_metadata)
+        selectedTxnIds = combinations[selectedOption]
+      } catch {}
+    }
+    await onMarkMatched(row.id, selectedTxnIds)
     setMarking(false)
     onClose()
+  }
+
+  const renderMembers = (members) => (
+    <ul className={styles.memberList}>
+      {members.map(m => (
+        <li key={m.id || m.internal_transaction_id} className={styles.memberItem}>
+          ID {m.internal_transaction_id} &bull; {fmtDate(m.internal_timestamp)} &bull; {fmtAmount(m.internal_amount)}
+        </li>
+      ))}
+    </ul>
+  )
+
+  const renderReviewMetadata = (meta) => {
+    if (!meta) return null
+    try {
+      const combinations = JSON.parse(meta)
+      if (!Array.isArray(combinations)) return null
+      return (
+        <div className={styles.combinationsContainer}>
+          <p className={styles.combinationsHeader}>Ambiguous Combinations Found:</p>
+          {combinations.map((comb, i) => (
+            <div key={i} className={styles.combinationItem}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name={`ambiguous_option_${row.id}`}
+                  checked={selectedOption === i}
+                  onChange={() => setSelectedOption(i)}
+                  style={{ marginTop: '4px' }}
+                />
+                <div>
+                  <strong>Option {i + 1}:</strong> {comb.join(', ')}
+                </div>
+              </label>
+            </div>
+          ))}
+        </div>
+      )
+    } catch {
+      return null
+    }
   }
 
   // Matched non-anomaly -> read-only detail view
@@ -206,18 +256,33 @@ function ReviewPanel({ row, onMarkMatched, onClose }) {
       <div className={styles.detailsContent}>
         <h4>Match Details</h4>
         <div className={styles.detailGrid}>
-          <div>
-            <span className={styles.detailLabel}>Internal Ledger Record:</span>
-            <span className={styles.detailValue}>
-              ID {row.internal_transaction_id || '-'} &bull; {fmtDate(row.internal_timestamp)} &bull; {fmtAmount(row.internal_amount)}
-            </span>
-          </div>
-          <div>
-            <span className={styles.detailLabel}>Bank Statement Record:</span>
-            <span className={styles.detailValue}>
-              Ref {row.bank_reference_id || '-'} &bull; {fmtDate(row.settlement_date)} &bull; {fmtAmount(row.deposit_amount)} &bull; Fee {fmtAmount(row.fee_deducted)}
-            </span>
-          </div>
+          {row.is_group ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <span className={styles.detailLabel}>Group Members ({row.member_count}):</span>
+              {renderMembers(row.members)}
+              <div style={{ marginTop: '12px' }}>
+                <span className={styles.detailLabel}>Bank Statement Record:</span>
+                <span className={styles.detailValue}>
+                  Ref {row.bank_reference_id || '-'} &bull; {fmtDate(row.settlement_date)} &bull; {fmtAmount(row.deposit_amount)} &bull; Fee {fmtAmount(row.fee_deducted)}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <span className={styles.detailLabel}>Internal Ledger Record:</span>
+                <span className={styles.detailValue}>
+                  ID {row.internal_transaction_id || '-'} &bull; {fmtDate(row.internal_timestamp)} &bull; {fmtAmount(row.internal_amount)}
+                </span>
+              </div>
+              <div>
+                <span className={styles.detailLabel}>Bank Statement Record:</span>
+                <span className={styles.detailValue}>
+                  Ref {row.bank_reference_id || '-'} &bull; {fmtDate(row.settlement_date)} &bull; {fmtAmount(row.deposit_amount)} &bull; Fee {fmtAmount(row.fee_deducted)}
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     )
@@ -232,6 +297,8 @@ function ReviewPanel({ row, onMarkMatched, onClose }) {
         ? <p className={styles.reasonText}>{row.anomaly_reason}</p>
         : <p className={styles.reasonText}>Status: {row.status}</p>
       }
+
+      {row.review_metadata && renderReviewMetadata(row.review_metadata)}
 
       {/* Mark Matched — only for UNDER_REVIEW */}
       {row.status === 'UNDER_REVIEW' && (
@@ -292,7 +359,34 @@ export default function TransactionsTable({
   const [showFilterMenu, setShowFilterMenu] = useState(false)
 
   const currentTab = TABS.find(t => t.id === activeTab) || TABS[0]
-  const pageRows   = results || []
+
+  // Aggregate MANY_TO_ONE rows so the parent group is a single row
+  const rawRows = results || []
+  const aggregatedRows = []
+  const groupMap = {}
+
+  for (const r of rawRows) {
+    if (r.group_id && r.status === 'MATCHED') {
+      if (!groupMap[r.group_id]) {
+        // Create the parent row
+        const parent = {
+          ...r,
+          id: r.group_id, // Use group_id as the key
+          is_group: true,
+          members: [r],
+        }
+        groupMap[r.group_id] = parent
+        aggregatedRows.push(parent)
+      } else {
+        // Add member to existing parent
+        groupMap[r.group_id].members.push(r)
+      }
+    } else {
+      aggregatedRows.push(r)
+    }
+  }
+
+  const pageRows   = aggregatedRows
   const skeletonRowCount = Math.max(4, Math.min(pageSize || 8, 8))
 
   function toggleRow(id) {
@@ -435,7 +529,9 @@ export default function TransactionsTable({
                         {fmtDate(row.internal_timestamp || row.settlement_date)}
                       </td>
                       <td className={`${styles.td} ${styles.mono}`}>
-                        {row.internal_transaction_id || row.bank_reference_id || '-'}
+                        {row.is_group
+                          ? <span className={styles.groupBadge}>Group ({row.member_count} items)</span>
+                          : (row.internal_transaction_id || row.bank_reference_id || '-')}
                       </td>
                       <td className={`${styles.td} ${styles.merchant}`}>
                         {row.merchant_id || '-'}
@@ -447,7 +543,7 @@ export default function TransactionsTable({
                         <StatusBadge status={row.status} isAnomaly={row.is_anomaly} />
                       </td>
                       <td className={`${styles.td} ${styles.tdRight} tabular-nums`}>
-                        {fmtAmount(row.internal_amount ?? row.deposit_amount)}
+                        {fmtAmount(row.is_group ? row.deposit_amount : (row.internal_amount ?? row.deposit_amount))}
                       </td>
                       <td className={`${styles.td} ${styles.tdRight} ${styles.feeCell} tabular-nums`}>
                         {row.fee_deducted && Number(row.fee_deducted) !== 0

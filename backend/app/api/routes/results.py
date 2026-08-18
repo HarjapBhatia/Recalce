@@ -10,9 +10,10 @@ details, and any row-level validation errors from ingestion.
 
 import uuid
 import math
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func, or_, desc, asc
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -22,6 +23,8 @@ from app.models.reconciliation_result import (
     MatchType,
     ResultStatus,
     BatchValidationError,
+    ReconciliationGroup,
+    ReconciliationGroupMember,
 )
 from app.models.internal_ledger import InternalLedger
 from app.models.bank_statement import BankStatement
@@ -38,16 +41,81 @@ router = APIRouter(tags=["results"])
 def mark_matched(
     result_id: uuid.UUID,
     db: Session = Depends(get_db),
+    transaction_ids: Optional[list[str]] = Body(default=None),
 ):
+    """
+    Resolve an UNDER_REVIEW result:
+    - If transaction_ids are provided (ambiguous group): link those specific
+      internal ledger rows as GroupMembers, mark them MATCHED, and flip the
+      bank-side result row to MATCHED.
+    - If no transaction_ids are given (simple review): just flip the result
+      row to MATCHED (original behaviour for 1:1 anomaly reviews).
+    """
     result = db.execute(
         select(ReconciliationResult).where(ReconciliationResult.id == result_id)
     ).scalar_one_or_none()
     if not result:
         raise HTTPException(status_code=404, detail="Result not found")
-    
+
+    if transaction_ids:
+        # --- Ambiguous group resolution ---
+        if result.group_id is None:
+            raise HTTPException(status_code=400, detail="This result is not part of a group.")
+
+        group = db.execute(
+            select(ReconciliationGroup).where(ReconciliationGroup.id == result.group_id)
+        ).scalar_one_or_none()
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found.")
+
+        # Look up internal ledger rows by transaction_id string within this batch
+        internal_rows = db.execute(
+            select(InternalLedger).where(
+                InternalLedger.batch_id == result.batch_id,
+                InternalLedger.transaction_id.in_(transaction_ids),
+            )
+        ).scalars().all()
+
+        if not internal_rows:
+            raise HTTPException(status_code=400, detail="None of the provided transaction IDs were found in this batch.")
+
+        # Create GroupMember links for the chosen transactions
+        for internal_row in internal_rows:
+            # Avoid duplicate members
+            existing = db.execute(
+                select(ReconciliationGroupMember).where(
+                    ReconciliationGroupMember.group_id == result.group_id,
+                    ReconciliationGroupMember.internal_txn_id == internal_row.id,
+                )
+            ).scalar_one_or_none()
+            if not existing:
+                db.add(ReconciliationGroupMember(
+                    group_id=result.group_id,
+                    internal_txn_id=internal_row.id,
+                ))
+
+            # Find the UNRECONCILED result row for this internal txn and flip it
+            internal_result = db.execute(
+                select(ReconciliationResult).where(
+                    ReconciliationResult.batch_id == result.batch_id,
+                    ReconciliationResult.internal_txn_id == internal_row.id,
+                )
+            ).scalar_one_or_none()
+            if internal_result:
+                internal_result.match_type = MatchType.MANY_TO_ONE
+                internal_result.status = ResultStatus.MATCHED
+                internal_result.bank_txn_id = result.bank_txn_id
+                internal_result.group_id = result.group_id
+
+        # Update the group record
+        group.status = ResultStatus.MATCHED
+        group.member_count = len(internal_rows)
+
+    # Always flip the bank-side result row to MATCHED
     result.status = ResultStatus.MATCHED
     db.commit()
-    
+    db.refresh(result)
+
     return ResultItem.model_validate(result)
 
 @router.get("/results/{batch_id}", response_model=ResultsResponse)
@@ -104,46 +172,69 @@ def get_results(
     exact = 0
     date_shift = 0
     fee_adjusted = 0
+    many_to_one = 0
+    under_review_groups = 0
     unreconciled_internal = 0
     unreconciled_bank = 0
     anomalies = 0
-    
-    tab_counts = {
-        "all": len(all_recs),
-        "matched": 0,
-        "unreconciled": 0,
-        "under_review": 0,
-        "anomalies": 0,
-    }
+
+    tab_matched = 0
+    tab_unreconciled = 0
+    tab_under_review = 0
+    tab_anomalies = 0
+    # "all" count = number of rows visible in the table:
+    #   - Every row that has an internal_txn_id (1 row per internal transaction)
+    #   - PLUS bank-only unreconciled rows (no internal_txn_id)
+    tab_all = 0
 
     for rec in all_recs:
         match_t = rec.match_type
         stat = rec.status
         is_anom = rec.is_anomaly
-        
+
+        # Count for "all" tab — count internal-side rows + bank-only rows
+        if rec.internal_txn_id is not None:
+            tab_all += 1
+        elif rec.bank_txn_id is not None and rec.internal_txn_id is None:
+            tab_all += 1
+
         if match_t == MatchType.EXACT:
             exact += 1
         elif match_t == MatchType.DATE_SHIFT:
             date_shift += 1
         elif match_t == MatchType.FEE_ADJUSTED:
             fee_adjusted += 1
+        elif match_t == MatchType.MANY_TO_ONE:
+            if stat == ResultStatus.MATCHED:
+                many_to_one += 1
+            elif stat == ResultStatus.UNDER_REVIEW:
+                under_review_groups += 1
         elif match_t == MatchType.UNRECONCILED:
             if rec.internal_txn_id is not None:
                 unreconciled_internal += 1
-            if rec.bank_txn_id is not None:
+            elif rec.bank_txn_id is not None:
                 unreconciled_bank += 1
 
         if is_anom:
             anomalies += 1
-            
-        if stat == ResultStatus.MATCHED and not is_anom:
-            tab_counts["matched"] += 1
-        if stat == ResultStatus.UNRECONCILED and not is_anom:
-            tab_counts["unreconciled"] += 1
-        if stat == ResultStatus.UNDER_REVIEW:
-            tab_counts["under_review"] += 1
+
+        # Tabs are mutually exclusive: anomalies go ONLY to the anomalies tab
         if is_anom:
-            tab_counts["anomalies"] += 1
+            tab_anomalies += 1
+        elif stat == ResultStatus.MATCHED:
+            tab_matched += 1
+        elif stat == ResultStatus.UNRECONCILED:
+            tab_unreconciled += 1
+        elif stat == ResultStatus.UNDER_REVIEW:
+            tab_under_review += 1
+
+    tab_counts = {
+        "all": tab_all,
+        "matched": tab_matched,
+        "unreconciled": tab_unreconciled,
+        "under_review": tab_under_review,
+        "anomalies": tab_anomalies,
+    }
 
     summary = ResultSummary(
         total_internal=total_internal,
@@ -151,6 +242,8 @@ def get_results(
         exact_matches=exact,
         date_shift_matches=date_shift,
         fee_adjusted_matches=fee_adjusted,
+        many_to_one_matches=many_to_one,
+        under_review_groups=under_review_groups,
         unreconciled_internal=unreconciled_internal,
         unreconciled_bank=unreconciled_bank,
         anomalies_flagged=anomalies,
@@ -167,6 +260,8 @@ def get_results(
             BankStatement.bank_reference_id.label("bank_ref"),
             BankStatement.deposit_amount.label("dep_amount"),
             BankStatement.settlement_date.label("settle_date"),
+            ReconciliationGroup.member_count.label("member_count"),
+            ReconciliationGroup.review_metadata.label("review_metadata"),
         )
         .outerjoin(
             InternalLedger,
@@ -176,18 +271,22 @@ def get_results(
             BankStatement,
             ReconciliationResult.bank_txn_id == BankStatement.id,
         )
+        .outerjoin(
+            ReconciliationGroup,
+            ReconciliationResult.group_id == ReconciliationGroup.id,
+        )
         .where(ReconciliationResult.batch_id == batch_id)
     )
 
     # Apply Tab Filter
     if tab == "matched":
-        stmt = stmt.where(ReconciliationResult.status == ResultStatus.MATCHED, ReconciliationResult.is_anomaly == False)
+        stmt = stmt.where(ReconciliationResult.status == ResultStatus.MATCHED, ReconciliationResult.is_anomaly.is_(False))
     elif tab == "unreconciled":
-        stmt = stmt.where(ReconciliationResult.status == ResultStatus.UNRECONCILED, ReconciliationResult.is_anomaly == False)
+        stmt = stmt.where(ReconciliationResult.status == ResultStatus.UNRECONCILED, ReconciliationResult.is_anomaly.is_(False))
     elif tab == "under_review":
         stmt = stmt.where(ReconciliationResult.status == ResultStatus.UNDER_REVIEW)
     elif tab == "anomalies":
-        stmt = stmt.where(ReconciliationResult.is_anomaly == True)
+        stmt = stmt.where(ReconciliationResult.is_anomaly.is_(True))
 
     # Apply Search Filter
     if search:
@@ -240,6 +339,9 @@ def get_results(
                 bank_reference_id=row.bank_ref,
                 deposit_amount=row.dep_amount,
                 settlement_date=row.settle_date,
+                group_id=rec.group_id,
+                member_count=row.member_count,
+                review_metadata=row.review_metadata,
             )
         )
 

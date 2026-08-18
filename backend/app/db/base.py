@@ -18,4 +18,6 @@ from app.models.bank_statement import BankStatement  # noqa: F401
 from app.models.reconciliation_result import (  # noqa: F401
     ReconciliationResult,
     BatchValidationError,
+    ReconciliationGroup,
+    ReconciliationGroupMember,
 )
