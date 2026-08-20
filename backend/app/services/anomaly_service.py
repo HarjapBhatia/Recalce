@@ -81,12 +81,10 @@ def load_models() -> None:
 
 
 def _assert_loaded() -> None:
-    """Raise RuntimeError if load_models() has not been called yet."""
+    """Ensure models are loaded into memory; lazily load if needed."""
+    global _model_matched, _model_unmatched
     if _model_matched is None or _model_unmatched is None:
-        raise RuntimeError(
-            "Anomaly models are not loaded. "
-            "Ensure load_models() is called at worker startup."
-        )
+        load_models()
 
 
 def predict_matched(features: np.ndarray) -> np.ndarray:
