@@ -315,41 +315,28 @@ def run_many_to_one_pass(
         by_merchant.setdefault(row.merchant_id, []).append(row)
 
     for deposit in unmatched_bank:
-        # ── Stage 1: Candidate narrowing ──────────────────────────────────────
+        # ── Stage 1+2: Merchant identification then candidate narrowing ────────
+        # Run fuzzy merchant matching FIRST against all known merchant IDs so
+        # that Stage 1 only gathers candidates from the correct merchant cluster.
+        # The old order (Stage 1 across all merchants → Stage 2 narrow) caused
+        # CANDIDATE_POOL_OVERFLOW for any merchant with >MAX_CANDIDATE_POOL
+        # transactions inside the settlement window, even though Stage 2 would
+        # have reduced that to a manageable subset.
         s_min_cents = deposit.deposit_cents
         s_max_cents = floor(deposit.deposit_cents / (1.0 - fee_tolerance_max))
 
         earliest = deposit.settlement_date - timedelta(days=settlement_window_days)
 
-        initial_pool: list[CandidateRow] = [
-            row
-            for rows in by_merchant.values()
-            for row in rows
-            if (
-                earliest <= row.timestamp_date <= deposit.settlement_date
-                and row.amount_cents <= s_max_cents
-                and row.db_id not in claimed_internal_ids
-            )
-        ]
-
-        if not initial_pool:
-            continue
-
-        # ── Stage 2: RapidFuzz reference matching ─────────────────────────────
-        merchant_ids_in_pool = {row.merchant_id for row in initial_pool}
+        # ── Stage 2 (early): identify target merchant via fuzzy match ──────────
         best_merchant: str | None = None
         best_score: float = 0.0
-        for mid in merchant_ids_in_pool:
+        for mid in by_merchant:
             score = _fuzzy_score(deposit.bank_reference_id, mid)
             if score > best_score:
                 best_score = score
                 best_merchant = mid
 
-        if best_score >= fuzzy_threshold and best_merchant is not None:
-            candidate_pool = [
-                row for row in initial_pool if row.merchant_id == best_merchant
-            ]
-        else:
+        if best_score < fuzzy_threshold or best_merchant is None:
             # No merchant hint above threshold: skip N:1 for financial safety
             logger.debug(
                 "Deposit %s: best fuzzy score %.1f%% < threshold %.0f%%; skipping N:1.",
@@ -357,6 +344,20 @@ def run_many_to_one_pass(
                 best_score,
                 fuzzy_threshold,
             )
+            continue
+
+        # ── Stage 1: Candidate narrowing (merchant-scoped) ────────────────────
+        candidate_pool: list[CandidateRow] = [
+            row
+            for row in by_merchant[best_merchant]
+            if (
+                earliest <= row.timestamp_date <= deposit.settlement_date
+                and row.amount_cents <= s_max_cents
+                and row.db_id not in claimed_internal_ids
+            )
+        ]
+
+        if not candidate_pool:
             continue
 
         # ── Stage 3: Pool cap ─────────────────────────────────────────────────

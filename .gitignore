@@ -24,8 +24,8 @@ env/
 
 # ── ML artefacts ─────────────────────────────────────────────────────────────
 backend/ml/data/
-backend/ml/*.pkl
-backend/ml/models/
+# backend/ml/*.pkl
+# backend/ml/models/
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store

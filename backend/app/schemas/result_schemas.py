@@ -67,6 +67,14 @@ class ResultItem(BaseModel):
     member_count: int | None = None
     review_metadata: str | None = None
 
+    # Computed convenience flag: True when this row represents the bank-side of a
+    # Many-to-One group (no internal_transaction_id but group_id is set). The
+    # frontend uses this to render "Group (N items)" in the Reference column
+    # instead of a raw bank reference string.
+    @property
+    def is_group(self) -> bool:
+        return self.group_id is not None and self.internal_transaction_id is None
+
 
 class ValidationErrorItem(BaseModel):
     """One row-level CSV validation failure recorded during ingestion."""
