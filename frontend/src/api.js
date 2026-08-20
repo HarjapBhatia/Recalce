@@ -4,7 +4,8 @@
  * Base URL is hardcoded to localhost:8000 for local development.
  */
 
-const BASE = 'http://127.0.0.1:8000/api/v1'
+const rawBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+const BASE = rawBase.endsWith('/api/v1') ? rawBase : `${rawBase.replace(/\/+$/, '')}/api/v1`
 
 /** POST /upload — multipart, both CSV files */
 export async function uploadFiles(internalFile, bankFile) {
