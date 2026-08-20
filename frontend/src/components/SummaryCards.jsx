@@ -31,13 +31,15 @@ export default function SummaryCards({ summary, tabCounts }) {
     total_bank,
   } = summary
 
-  // Use server-computed tab counts which are accurate and mutually exclusive.
-  // Fallback to summing summary fields if tab_counts is not yet available.
-  const totalMatched = tabCounts
+  // Use the server-computed tab counts so the summary mirrors the table.
+  // Fall back to summary fields before a batch has loaded.
+  const totalRecords = tabCounts?.all ?? total_internal
+  const totalMatched = tabCounts?.matched != null
     ? tabCounts.matched
     : exact_matches + date_shift_matches + fee_adjusted_matches + many_to_one_matches
-  // Unreconciled = ledger rows with no match (unreconciled_internal from CSV)
-  const totalUnreconciled = unreconciled_internal
+  const totalUnreconciled = tabCounts?.unreconciled ?? unreconciled_internal
+  const totalUnderReview = tabCounts?.under_review ?? 0
+  const totalAnomalies = tabCounts?.anomalies ?? anomalies_flagged
 
   return (
     <section className={styles.grid}>
@@ -50,7 +52,7 @@ export default function SummaryCards({ summary, tabCounts }) {
         <div className={styles.statsGrid}>
           <div className={styles.statCell}>
             <span className={styles.statLabel}>Total Records</span>
-            <span className={styles.statValue}>{formatCount(total_internal)}</span>
+            <span className={styles.statValue}>{formatCount(totalRecords)}</span>
           </div>
           <div className={`${styles.statCell} ${styles.borderAccentNeutral}`}>
             <span className={styles.statLabel}>Matched</span>
@@ -61,8 +63,12 @@ export default function SummaryCards({ summary, tabCounts }) {
             <span className={`${styles.statValue} ${styles.errorText}`}>{formatCount(totalUnreconciled)}</span>
           </div>
           <div className={`${styles.statCell} ${styles.borderAccentWarning}`}>
+            <span className={styles.statLabel}>Under Review</span>
+            <span className={`${styles.statValue} ${styles.warningText}`}>{formatCount(totalUnderReview)}</span>
+          </div>
+          <div className={`${styles.statCell} ${styles.borderAccentWarning}`}>
             <span className={styles.statLabel}>Anomalies</span>
-            <span className={`${styles.statValue} ${styles.warningText}`}>{formatCount(anomalies_flagged)}</span>
+            <span className={`${styles.statValue} ${styles.warningText}`}>{formatCount(totalAnomalies)}</span>
           </div>
         </div>
       </div>

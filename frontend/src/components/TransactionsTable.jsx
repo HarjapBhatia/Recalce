@@ -57,8 +57,6 @@ function matchTypeLabel(t) {
 }
 
 // ── CSV export helper ─────────────────────────────────────────────────────────
-// NOTE: Exports the current page only; full-dataset export would require a
-// dedicated backend endpoint.
 function exportToCsv(rows, tabLabel) {
   const headers = ['Date', 'Reference', 'Merchant', 'Match Type', 'Status', 'Amount', 'Fee', 'Anomaly', 'Anomaly Reason']
   const csvRows = [headers.join(',')]
@@ -334,8 +332,9 @@ function ReviewPanel({ row, onMarkMatched, onClose }) {
  *   onTabChange(id)  - switch active tab
  *   searchQuery      - current search string
  *   onSearchChange   - controlled input handler
- *   sortOrder        - 'default' | 'highToLow' | 'lowToHigh'
+ *   sortOrder        - 'default' | 'highToLow' | 'lowToHigh' | 'oneToOne' | 'manyToOne'
  *   onSortChange     - handler
+ *   onExport          - returns every row in the current filtered tab
  *   onMarkMatched(id)         - marks record as MATCHED
  */
 export default function TransactionsTable({
@@ -353,40 +352,18 @@ export default function TransactionsTable({
   onSearchChange,
   sortOrder,
   onSortChange,
+  onExport,
   onMarkMatched,
 }) {
   const [expandedRowId, setExpandedRowId]   = useState(null)
   const [showFilterMenu, setShowFilterMenu] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const currentTab = TABS.find(t => t.id === activeTab) || TABS[0]
 
-  // Aggregate MANY_TO_ONE rows so the parent group is a single row
-  const rawRows = results || []
-  const aggregatedRows = []
-  const groupMap = {}
-
-  for (const r of rawRows) {
-    if (r.group_id && r.status === 'MATCHED') {
-      if (!groupMap[r.group_id]) {
-        // Create the parent row
-        const parent = {
-          ...r,
-          id: r.group_id, // Use group_id as the key
-          is_group: true,
-          members: [r],
-        }
-        groupMap[r.group_id] = parent
-        aggregatedRows.push(parent)
-      } else {
-        // Add member to existing parent
-        groupMap[r.group_id].members.push(r)
-      }
-    } else {
-      aggregatedRows.push(r)
-    }
-  }
-
-  const pageRows   = aggregatedRows
+  // Keep one displayed row per transaction so the table page size and counts
+  // remain consistent, including for many-to-one matches.
+  const pageRows = results || []
   const skeletonRowCount = Math.max(4, Math.min(pageSize || 8, 8))
 
   function toggleRow(id) {
@@ -403,8 +380,13 @@ export default function TransactionsTable({
     onSortChange(order)
   }
 
-  function handleExport() {
-    exportToCsv(pageRows, currentTab.label)
+  async function handleExport() {
+    setExporting(true)
+    try {
+      exportToCsv(await onExport(), currentTab.label)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -465,7 +447,7 @@ export default function TransactionsTable({
             </button>
             {showFilterMenu && (
               <div className={styles.filterMenu}>
-                <div className={styles.filterMenuHeader}>Sort by Amount</div>
+                <div className={styles.filterMenuHeader}>Sort</div>
                 <button
                   className={`${styles.filterOption} ${sortOrder === 'default'   ? styles.activeOption : ''}`}
                   onClick={() => handleSortChange('default')}
@@ -478,12 +460,20 @@ export default function TransactionsTable({
                   className={`${styles.filterOption} ${sortOrder === 'lowToHigh' ? styles.activeOption : ''}`}
                   onClick={() => handleSortChange('lowToHigh')}
                 >Low to High</button>
+                <button
+                  className={`${styles.filterOption} ${sortOrder === 'oneToOne' ? styles.activeOption : ''}`}
+                  onClick={() => handleSortChange('oneToOne')}
+                >One to One First</button>
+                <button
+                  className={`${styles.filterOption} ${sortOrder === 'manyToOne' ? styles.activeOption : ''}`}
+                  onClick={() => handleSortChange('manyToOne')}
+                >Many to One First</button>
               </div>
             )}
           </div>
-          <button id="export-btn" className={styles.actionBtn} onClick={handleExport}>
+          <button id="export-btn" className={styles.actionBtn} onClick={handleExport} disabled={exporting}>
             <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
-            Export
+            {exporting ? 'Exporting...' : 'Export'}
           </button>
         </div>
       </div>

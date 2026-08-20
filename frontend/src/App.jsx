@@ -12,6 +12,8 @@ const DEFAULT_SUMMARY = {
   exact_matches: 0,
   date_shift_matches: 0,
   fee_adjusted_matches: 0,
+  many_to_one_matches: 0,
+  under_review_groups: 0,
   unreconciled_internal: 0,
   unreconciled_bank: 0,
   anomalies_flagged: 0,
@@ -102,6 +104,26 @@ export default function App() {
     }
   }
 
+  async function handleExport() {
+    if (!selectedBatchId) return []
+
+    const params = {
+      limit: 100,
+      tab: activeTab,
+      sort: sortOrder !== 'default' ? sortOrder : undefined,
+      search: debouncedSearch || undefined,
+    }
+    const firstPage = await getResults(selectedBatchId, { ...params, page: 1 })
+    const exportRows = [...firstPage.results]
+
+    for (let exportPage = 2; exportPage <= firstPage.total_pages; exportPage += 1) {
+      const data = await getResults(selectedBatchId, { ...params, page: exportPage })
+      exportRows.push(...data.results)
+    }
+
+    return exportRows
+  }
+
   // ── After a new reconciliation run ──────────────────────────────────────────
   async function handleBatchComplete() {
     const batches = await listBatches()
@@ -136,7 +158,7 @@ export default function App() {
         <DataIngestion onBatchComplete={handleBatchComplete} />
 
         {/* Summary cards */}
-        <SummaryCards summary={summary || DEFAULT_SUMMARY} />
+        <SummaryCards summary={summary || DEFAULT_SUMMARY} tabCounts={tabCounts} />
 
         {/* Results error */}
         {resultsError && (
@@ -166,6 +188,7 @@ export default function App() {
           // sort
           sortOrder={sortOrder}
           onSortChange={setSortOrder}
+          onExport={handleExport}
           // actions
           onMarkMatched={handleMarkMatched}
         />

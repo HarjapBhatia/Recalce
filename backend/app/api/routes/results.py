@@ -13,7 +13,7 @@ import math
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
-from sqlalchemy import select, func, or_
+from sqlalchemy import case, select, func, or_
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -218,10 +218,11 @@ def get_results(
         if is_anom:
             anomalies += 1
 
-        # Tabs are mutually exclusive: anomalies go ONLY to the anomalies tab
+        # Status tabs include anomalous records. The anomalies tab is an
+        # overlapping diagnostic view, so summary and status-tab counts agree.
         if is_anom:
             tab_anomalies += 1
-        elif stat == ResultStatus.MATCHED:
+        if stat == ResultStatus.MATCHED:
             tab_matched += 1
         elif stat == ResultStatus.UNRECONCILED:
             tab_unreconciled += 1
@@ -280,9 +281,9 @@ def get_results(
 
     # Apply Tab Filter
     if tab == "matched":
-        stmt = stmt.where(ReconciliationResult.status == ResultStatus.MATCHED, ReconciliationResult.is_anomaly.is_(False))
+        stmt = stmt.where(ReconciliationResult.status == ResultStatus.MATCHED)
     elif tab == "unreconciled":
-        stmt = stmt.where(ReconciliationResult.status == ResultStatus.UNRECONCILED, ReconciliationResult.is_anomaly.is_(False))
+        stmt = stmt.where(ReconciliationResult.status == ResultStatus.UNRECONCILED)
     elif tab == "under_review":
         stmt = stmt.where(ReconciliationResult.status == ResultStatus.UNDER_REVIEW)
     elif tab == "anomalies":
@@ -312,6 +313,16 @@ def get_results(
     elif sort == "lowToHigh":
         stmt = stmt.order_by(
             func.coalesce(InternalLedger.amount, BankStatement.deposit_amount, 0).asc()
+        )
+    elif sort == "oneToOne":
+        stmt = stmt.order_by(
+            case((ReconciliationResult.match_type == MatchType.MANY_TO_ONE, 1), else_=0),
+            ReconciliationResult.created_at.desc(),
+        )
+    elif sort == "manyToOne":
+        stmt = stmt.order_by(
+            case((ReconciliationResult.match_type == MatchType.MANY_TO_ONE, 0), else_=1),
+            ReconciliationResult.created_at.desc(),
         )
     else:
         stmt = stmt.order_by(ReconciliationResult.created_at.desc())
