@@ -25,8 +25,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire backend source code
 COPY . .
 
+# Make entrypoint script executable
+RUN chmod +x /app/entrypoint.sh
+
 # Expose port (default 8000, Render sets $PORT dynamically)
 EXPOSE 8000
 
-# Default command (uses dynamic PORT from Render or defaults to 8000)
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Run both Celery and FastAPI in the single free container
+ENTRYPOINT ["/app/entrypoint.sh"]
