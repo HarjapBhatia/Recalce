@@ -67,6 +67,10 @@ graph LR
         ML[Dual Isolation Forest]
     end
 
+    subgraph AI Assistant
+        LLM[Groq API]
+    end
+
     UI -->|1. Upload CSVs| API
     API -->|2. Stream files| B2
     API -->|3. Enqueue Tasks| Broker
@@ -83,6 +87,10 @@ graph LR
     
     UI -.->|8. Poll Results| API
     API -.->|9. Query Status| DB
+
+    UI -->|10. Chat Query| API
+    API <-->|11. Tool Calling| LLM
+    API -.->|12. Fetch Metrics| DB
 ```
 
 
