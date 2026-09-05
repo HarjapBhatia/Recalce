@@ -27,6 +27,7 @@ import logging
 import uuid
 
 from pydantic import ValidationError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.celery_app import celery_app
@@ -232,6 +233,8 @@ def ingest(self, batch_id: str) -> str:
             raise ValueError(f"Batch {batch_id} not found in the database.")
 
         _set_batch_status(db, batch, BatchStatus.INGESTING)
+        batch.processing_started_at = func.now()
+        db.commit()
         logger.info("Ingestion started: batch=%s", batch_id)
 
         # Download both files from B2. These are blocking calls; B2 latency

@@ -48,6 +48,12 @@ class ReconciliationBatch(Base):
         Enum(BatchStatus), nullable=False, default=BatchStatus.PENDING
     )
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    processing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    processing_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # -- Relationships ----------------------------------------------------------
     # One batch owns many ledger entries, bank entries, results, and errors.

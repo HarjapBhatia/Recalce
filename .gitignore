@@ -42,3 +42,7 @@ logs/
 
 # ── Custom ───────────────────────────────────────────────────────────────────
 context/
+scratch/
+test_*.py
+backend/test_*.py
+*interview_prep*

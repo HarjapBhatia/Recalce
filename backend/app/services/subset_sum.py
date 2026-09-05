@@ -154,6 +154,9 @@ class GroupMatch:
 # ---------------------------------------------------------------------------
 
 
+_fuzz_module = None
+_fuzz_imported = False
+
 def _fuzzy_score(bank_ref: str, merchant_id: str) -> float:
     """
     Return the best RapidFuzz similarity score between bank_ref and merchant_id.
@@ -167,15 +170,23 @@ def _fuzzy_score(bank_ref: str, merchant_id: str) -> float:
     Returns 0.0 if rapidfuzz is not installed, allowing the caller to proceed
     without the optional dependency (N:1 matching will be skipped entirely).
     """
-    try:
-        from rapidfuzz import fuzz  # optional dependency
-        return max(
-            fuzz.token_sort_ratio(bank_ref, merchant_id),
-            fuzz.partial_ratio(bank_ref, merchant_id),
-        )
-    except ImportError:
-        logger.debug("rapidfuzz not installed; fuzzy merchant matching disabled.")
+    global _fuzz_module, _fuzz_imported
+    if not _fuzz_imported:
+        _fuzz_imported = True
+        try:
+            from rapidfuzz import fuzz
+            _fuzz_module = fuzz
+        except ImportError:
+            logger.debug("rapidfuzz not installed; fuzzy merchant matching disabled.")
+            _fuzz_module = None
+
+    if _fuzz_module is None:
         return 0.0
+
+    return max(
+        _fuzz_module.token_sort_ratio(bank_ref, merchant_id),
+        _fuzz_module.partial_ratio(bank_ref, merchant_id),
+    )
 
 
 def _branch_and_bound(

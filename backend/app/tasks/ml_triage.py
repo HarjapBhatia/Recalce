@@ -40,6 +40,7 @@ import logging
 import uuid
 
 import pandas as pd
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.celery_app import celery_app
@@ -256,6 +257,7 @@ def ml_triage(self, batch_id: str) -> str:
                 "Anomaly scoring skipped for batch=%s: %s", batch_id, exc
             )
 
+        batch.processing_completed_at = func.now()
         batch.status = BatchStatus.COMPLETE
         db.commit()
         logger.info("Batch complete: batch=%s", batch_id)

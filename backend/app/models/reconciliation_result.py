@@ -69,6 +69,7 @@ class ReconciliationResult(Base):
     )
     is_anomaly: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     anomaly_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unreconciled_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[ResultStatus] = mapped_column(Enum(ResultStatus), nullable=False)
     batch_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("reconciliation_batches.id"), nullable=False, index=True

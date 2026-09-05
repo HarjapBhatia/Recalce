@@ -163,6 +163,11 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
     unmatched_internal = {row.id: row for row in internal_rows}
     unmatched_bank = {row.id: row for row in bank_rows}
 
+    # Build reference-ID sets for all rows loaded initially.
+    # Used in Pass 5 to classify unreconciled reasons without re-querying the DB.
+    all_bank_ref_ids: set[str] = {row.bank_reference_id for row in bank_rows}
+    all_internal_txn_ids: set[str] = {row.transaction_id for row in internal_rows}
+
     results_to_insert: list[ReconciliationResult] = []
 
     # -------------------------------------------------------------------
@@ -378,6 +383,14 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
     # Pass 5: UNRECONCILED -- remaining unmatched rows
     # -------------------------------------------------------------------
     for int_id, int_row in unmatched_internal.items():
+        # If the transaction_id appears as a bank_reference_id in the original
+        # bank rows, we know the IDs matched but amounts/dates didn't reconcile.
+        # Otherwise, no counterpart existed at all.
+        if int_row.transaction_id in all_bank_ref_ids:
+            unreconciled_reason = "Amount or date mismatch"
+        else:
+            unreconciled_reason = "No candidate found"
+
         results_to_insert.append(
             ReconciliationResult(
                 batch_id=batch_uuid,
@@ -386,11 +399,19 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
                 match_type=MatchType.UNRECONCILED,
                 fee_deducted=Decimal("0"),
                 status=ResultStatus.UNRECONCILED,
+                unreconciled_reason=unreconciled_reason,
             )
         )
         summary["unreconciled_internal"] += 1
 
     for bank_id_val, bank_row in unmatched_bank.items():
+        # If the bank_reference_id appears as a transaction_id in the original
+        # internal rows, IDs matched but amounts/dates didn't reconcile.
+        if bank_row.bank_reference_id in all_internal_txn_ids:
+            unreconciled_reason = "Amount or date mismatch"
+        else:
+            unreconciled_reason = "No candidate found"
+
         results_to_insert.append(
             ReconciliationResult(
                 batch_id=batch_uuid,
@@ -399,6 +420,7 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
                 match_type=MatchType.UNRECONCILED,
                 fee_deducted=Decimal("0"),
                 status=ResultStatus.UNRECONCILED,
+                unreconciled_reason=unreconciled_reason,
             )
         )
         summary["unreconciled_bank"] += 1

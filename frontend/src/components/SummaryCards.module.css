@@ -64,18 +64,88 @@
   text-transform: uppercase;
   color: var(--secondary);
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.infoWrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  cursor: help;
+}
+
+.infoIcon {
+  font-size: 14px !important;
+  color: var(--secondary);
+  transition: color 0.2s ease;
+}
+
+.infoWrapper:hover .infoIcon {
+  color: var(--on-surface);
+}
+
+.tooltip {
+  visibility: hidden;
+  opacity: 0;
+  width: 240px;
+  background-color: #222;
+  color: #fff;
+  text-align: left;
+  border-radius: 6px;
+  padding: 8px 12px;
+  position: absolute;
+  z-index: 10;
+  bottom: 150%;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: #222 transparent transparent transparent;
+}
+
+.infoWrapper:hover .tooltip {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .statValue {
-  font-size: 32px;
+  font-size: 24px;
   font-weight: 600;
-  line-height: 40px;
+  line-height: 32px;
   letter-spacing: -0.02em;
   color: var(--on-surface);
 }
 
 .errorText { color: var(--error); }
 .warningText { color: var(--primary-container); }
+
+/* Inline bracket text "(N under review)" next to the Unreconciled label */
+.underReviewBracket {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--outline-variant);
+  white-space: nowrap;
+}
 
 /* Reconciliation check card */
 .checkCard {

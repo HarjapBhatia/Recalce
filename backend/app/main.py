@@ -8,8 +8,10 @@ Registers all routers and sets up CORS, lifespan events, and health check.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
-from app.api.routes import upload, status, results
+from app.api.routes import upload, status, results, agent
 from app.core.config import settings
 
 app = FastAPI(
@@ -31,6 +33,12 @@ app.add_middleware(
 app.include_router(upload.router,  prefix="/api/v1")
 app.include_router(status.router,  prefix="/api/v1")
 app.include_router(results.router, prefix="/api/v1")
+app.include_router(agent.router,   prefix="/api/v1/agent")
+
+# ── Static sample datasets ─────────────────────────────────────────────────────
+_static_dir = Path(__file__).parent / "static"
+_static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

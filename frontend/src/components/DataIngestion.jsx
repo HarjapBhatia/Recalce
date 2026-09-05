@@ -55,9 +55,12 @@ function DropZone({ label, icon, file, onFile, id }) {
   )
 }
 
+const DATASETS = ['dataset_a', 'dataset_b', 'dataset_c', 'dataset_d', 'dataset_e']
+
 export default function DataIngestion({ onBatchComplete }) {
   const [internalFile, setInternalFile] = useState(null)
   const [bankFile, setBankFile] = useState(null)
+  const [generating, setGenerating] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState('')
   const [error, setError] = useState(null)
@@ -69,6 +72,32 @@ export default function DataIngestion({ onBatchComplete }) {
     ML_TRIAGE: 'Running ML anomaly triage...',
     COMPLETE: 'Complete',
     FAILED: 'Processing failed',
+  }
+
+  async function handleGenerateData() {
+    setError(null)
+    setGenerating(true)
+
+    try {
+      const rawBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+      const baseUrl = rawBase.replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '')
+      const dataset = DATASETS[Math.floor(Math.random() * DATASETS.length)]
+
+      const [internalRes, bankRes] = await Promise.all([
+        fetch(`${baseUrl}/static/${dataset}/internal_ledger_test.csv`),
+        fetch(`${baseUrl}/static/${dataset}/bank_statement_test.csv`),
+      ])
+      if (!internalRes.ok || !bankRes.ok) throw new Error('Failed to load sample dataset from server.')
+
+      const [internalBlob, bankBlob] = await Promise.all([internalRes.blob(), bankRes.blob()])
+
+      setInternalFile(new File([internalBlob], 'internal_ledger_test.csv', { type: 'text/csv' }))
+      setBankFile(new File([bankBlob], 'bank_statement_test.csv', { type: 'text/csv' }))
+    } catch (err) {
+      setError(err.message || 'An error occurred. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   async function handleReconcile() {
@@ -123,24 +152,44 @@ export default function DataIngestion({ onBatchComplete }) {
           <span className="material-symbols-outlined" style={{ color: 'var(--primary-container)', fontSize: '22px' }}>upload_file</span>
           Data Ingestion
         </h2>
-        <button
-          className={styles.reconcileBtn}
-          onClick={handleReconcile}
-          disabled={processing}
-          id="scan-reconcile-btn"
-        >
-          {processing ? (
-            <>
-              <span className={styles.spinner} />
-              {processingStatus}
-            </>
-          ) : (
-            <>
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>magic_button</span>
-              Scan and Reconcile
-            </>
-          )}
-        </button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            className={styles.reconcileBtn}
+            onClick={handleGenerateData}
+            disabled={generating || processing}
+            id="generate-data-btn"
+          >
+            {generating ? (
+              <>
+                <span className={styles.spinner} />
+                Fetching...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>bolt</span>
+                Generate Data
+              </>
+            )}
+          </button>
+          <button
+            className={styles.reconcileBtn}
+            onClick={handleReconcile}
+            disabled={generating || processing}
+            id="scan-reconcile-btn"
+          >
+            {processing ? (
+              <>
+                <span className={styles.spinner} />
+                {processingStatus}
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>magic_button</span>
+                Scan and Reconcile
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {error && (

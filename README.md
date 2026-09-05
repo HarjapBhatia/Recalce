@@ -14,7 +14,6 @@
   <a href="#getting-started">Getting Started</a>
 </p>
 
----
 
 ## The Problem & Market Demand
 
@@ -27,7 +26,6 @@ In the real world, these two ledgers **never line up 1:1**.
 
 **The Result**: Small-to-mid-market companies employ accounting teams who spend hundreds of hours manually cross-referencing Excel sheets. Standard SQL equality matches fail. Human error leads to uncollected fees, undetected bank errors, compliance failures, and hidden fraud.
 
----
 
 ## The Solution
 
@@ -39,7 +37,6 @@ In the real world, these two ledgers **never line up 1:1**.
 * **Fault-Tolerant Ingestion**: Validates massive CSVs row-by-row using Pydantic. Corrupted rows are isolated and tracked in audit tables without failing the entire batch workflow.
 * **Interactive Dashboard**: A React 19 / Vite frontend featuring live lifecycle polling, amount sorting, server-side search, and CSV exports.
 
----
 
 ## Architecture
 
@@ -88,7 +85,6 @@ graph LR
     API -.->|9. Query Status| DB
 ```
 
----
 
 ## The Reconciliation Engine
 
@@ -100,7 +96,6 @@ The matching engine is deterministic and operates via a strict, cascading 5-pass
 4. **Pass 4 (Many-to-One / N:1)**: Solves for lumped gateway payouts. Uses RapidFuzz for merchant clustering and a **Branch-and-Bound Subset Sum Algorithm (DFS)** to find internal transactions that exactly sum to a single bank deposit. Ambiguous combinations are safely routed to manual review.
 5. **Pass 5 (Unreconciled)**: Flags remaining orphaned rows for investigation.
 
----
 
 ## Machine Learning Pipeline
 
@@ -111,7 +106,15 @@ Deterministic rules catch predictable accounting behavior but miss unpredictable
 * **Why Isolation Forest?**: It handles varying density clusters without spherical assumptions, scales beautifully to large datasets ($O(n \log n)$), and requires no ground-truth fraud labels.
 * **Evaluation Metrics**: Models are explicitly calibrated on **Precision**, **Recall Floors**, and **PR-AUC** to protect finance teams from alert fatigue while strictly catching true anomalies. Standard accuracy is discarded as a metric due to extreme class imbalance.
 
----
+
+## AI Reconciliation Assistant (LLM)
+
+Recalce features a built-in, context-aware AI Assistant powered by Groq (`llama-3.1-8b-instant`). The assistant acts as a financial analyst for your reconciliation batch.
+
+* **Function Calling (Tools)**: The agent has native access to PostgreSQL through SQLAlchemy tools, allowing it to autonomously fetch merchant metrics, anomaly lists, exception reports, and transaction details without exposing internal IDs.
+* **Strict Scope Enforcement**: The system prompt is hardened against prompt injection, hallucination, and scope creep. It is explicitly constrained to discuss batch data only, preventing exposure of source code, IP, or off-topic subjects.
+* **Markdown Rendering**: Outputs are beautifully formatted in the React frontend with full markdown support, highlighting specific transactions and statuses automatically.
+
 
 ## Tech Stack
 
@@ -121,6 +124,7 @@ Deterministic rules catch predictable accounting behavior but miss unpredictable
 * **Celery** (Distributed Task Queue)
 * **Redis** (Message Broker)
 * **Uvicorn** (ASGI Server)
+* **Groq SDK** (LLM Tool Calling)
 
 ### Data & Machine Learning
 * **PostgreSQL / Neon** (ACID Relational Database)
@@ -133,8 +137,8 @@ Deterministic rules catch predictable accounting behavior but miss unpredictable
 * **React 19**
 * **Vite** (Build Tool)
 * **CSS Modules**
+* **React Markdown** (LLM Response formatting)
 
----
 
 ## Getting Started
 
@@ -148,6 +152,7 @@ B2_APPLICATION_KEY_ID=your_b2_key_id
 B2_APPLICATION_KEY=your_b2_key
 B2_BUCKET_NAME=your_b2_bucket
 B2_ENDPOINT_URL=your_b2_endpoint
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
 ### 1. Install Dependencies

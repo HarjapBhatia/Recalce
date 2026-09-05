@@ -158,16 +158,25 @@ def get_results(
         .where(BankStatement.batch_id == batch_id)
     ).scalar_one()
 
-    # Calculate Summary and Tab Counts
-    all_recs_stmt = select(
-        ReconciliationResult.match_type,
-        ReconciliationResult.status,
-        ReconciliationResult.is_anomaly,
-        ReconciliationResult.internal_txn_id,
-        ReconciliationResult.bank_txn_id,
-    ).where(ReconciliationResult.batch_id == batch_id)
-    
-    all_recs = db.execute(all_recs_stmt).all()
+    # Calculate Summary and Tab Counts via SQL aggregates
+    stats = db.execute(
+        select(
+            ReconciliationResult.match_type,
+            ReconciliationResult.status,
+            ReconciliationResult.is_anomaly,
+            case((ReconciliationResult.internal_txn_id.isnot(None), 1), else_=0).label("has_internal"),
+            case((ReconciliationResult.bank_txn_id.isnot(None), 1), else_=0).label("has_bank"),
+            func.count().label("cnt")
+        )
+        .where(ReconciliationResult.batch_id == batch_id)
+        .group_by(
+            ReconciliationResult.match_type,
+            ReconciliationResult.status,
+            ReconciliationResult.is_anomaly,
+            "has_internal",
+            "has_bank"
+        )
+    ).all()
 
     exact = 0
     date_shift = 0
@@ -182,52 +191,48 @@ def get_results(
     tab_unreconciled = 0
     tab_under_review = 0
     tab_anomalies = 0
-    # "all" count = number of rows visible in the table:
-    #   - Every row that has an internal_txn_id (1 row per internal transaction)
-    #   - PLUS bank-only unreconciled rows (no internal_txn_id)
     tab_all = 0
 
-    for rec in all_recs:
-        match_t = rec.match_type
-        stat = rec.status
-        is_anom = rec.is_anomaly
+    for row in stats:
+        match_t = row.match_type
+        stat = row.status
+        is_anom = row.is_anomaly
+        has_int = bool(row.has_internal)
+        has_bnk = bool(row.has_bank)
+        cnt = row.cnt
 
-        # Count for "all" tab — count internal-side rows + bank-only rows
-        if rec.internal_txn_id is not None:
-            tab_all += 1
-        elif rec.bank_txn_id is not None and rec.internal_txn_id is None:
-            tab_all += 1
+        if has_int:
+            tab_all += cnt
+        elif has_bnk and not has_int:
+            tab_all += cnt
 
         if match_t == MatchType.EXACT:
-            exact += 1
+            exact += cnt
         elif match_t == MatchType.DATE_SHIFT:
-            date_shift += 1
+            date_shift += cnt
         elif match_t == MatchType.FEE_ADJUSTED:
-            fee_adjusted += 1
+            fee_adjusted += cnt
         elif match_t == MatchType.MANY_TO_ONE:
             if stat == ResultStatus.MATCHED:
-                many_to_one += 1
+                many_to_one += cnt
             elif stat == ResultStatus.UNDER_REVIEW:
-                under_review_groups += 1
+                under_review_groups += cnt
         elif match_t == MatchType.UNRECONCILED:
-            if rec.internal_txn_id is not None:
-                unreconciled_internal += 1
-            elif rec.bank_txn_id is not None:
-                unreconciled_bank += 1
+            if has_int:
+                unreconciled_internal += cnt
+            elif has_bnk:
+                unreconciled_bank += cnt
 
         if is_anom:
-            anomalies += 1
+            anomalies += cnt
+            tab_anomalies += cnt
 
-        # Status tabs include anomalous records. The anomalies tab is an
-        # overlapping diagnostic view, so summary and status-tab counts agree.
-        if is_anom:
-            tab_anomalies += 1
         if stat == ResultStatus.MATCHED:
-            tab_matched += 1
+            tab_matched += cnt
         elif stat == ResultStatus.UNRECONCILED:
-            tab_unreconciled += 1
+            tab_unreconciled += cnt
         elif stat == ResultStatus.UNDER_REVIEW:
-            tab_under_review += 1
+            tab_under_review += cnt
 
     tab_counts = {
         "all": tab_all,
@@ -301,8 +306,12 @@ def get_results(
         )
         
     # Get total items after filtering
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total_items = db.execute(count_stmt).scalar_one()
+    if search:
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_items = db.execute(count_stmt).scalar_one()
+    else:
+        total_items = tab_counts.get(tab, 0)
+
     total_pages = math.ceil(total_items / limit) if total_items > 0 else 1
 
     # Apply Sort Filter

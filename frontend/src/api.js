@@ -61,3 +61,27 @@ export async function markMatched(resultId) {
   }
   return res.json()
 }
+
+/** GET /batches/{batch_id}/report */
+export async function getBatchReport(batchId) {
+  const res = await fetch(`${BASE}/batches/${batchId}/report`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Report fetch failed')
+  }
+  return res.json()
+}
+
+/** POST /agent/chat — answer a question about the active reconciliation batch */
+export async function chatWithAgent(batchId, messages) {
+  const res = await fetch(`${BASE}/agent/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batch_id: batchId, messages }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Agent request failed')
+  }
+  return res.json()
+}

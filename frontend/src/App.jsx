@@ -4,7 +4,8 @@ import BatchSelector from './components/BatchSelector'
 import DataIngestion from './components/DataIngestion'
 import SummaryCards from './components/SummaryCards'
 import TransactionsTable from './components/TransactionsTable'
-import { getResults, listBatches, markMatched } from './api'
+import AgentPanel from './components/AgentPanel'
+import { getResults, listBatches, markMatched, getBatchReport } from './api'
 import styles from './App.module.css'
 
 const DEFAULT_SUMMARY = {
@@ -27,8 +28,10 @@ export default function App() {
   const [results, setResults]             = useState(null)
   const [summary, setSummary]             = useState(null)
   const [tabCounts, setTabCounts]         = useState({})
+  const [report, setReport]               = useState(null)
   const [loadingResults, setLoadingResults] = useState(false)
   const [resultsError, setResultsError]   = useState(null)
+  const [isAgentOpen, setIsAgentOpen]     = useState(false)
 
   // Server-side filter/sort/pagination state (lifted here so App controls fetching)
   const [activeTab, setActiveTab]   = useState('all')
@@ -61,16 +64,22 @@ export default function App() {
         sort:   opts.sort   !== 'default' ? opts.sort : undefined,
         search: opts.search || undefined,
       }
-      const data = await getResults(batchId, params)
+      // Fetch results and report concurrently; report failure is non-fatal
+      const [data, reportData] = await Promise.all([
+        getResults(batchId, params),
+        getBatchReport(batchId).catch(() => null),
+      ])
       setResults(data.results)
       setSummary(data.summary)
       setTabCounts(data.tab_counts ?? {})
       setTotalPages(data.total_pages ?? 1)
       setTotalItems(data.total_items ?? 0)
+      setReport(reportData)
     } catch (err) {
       setResultsError(err.message)
       setResults(null)
       setSummary(null)
+      setReport(null)
     } finally {
       setLoadingResults(false)
     }
@@ -158,7 +167,7 @@ export default function App() {
         <DataIngestion onBatchComplete={handleBatchComplete} />
 
         {/* Summary cards */}
-        <SummaryCards summary={summary || DEFAULT_SUMMARY} tabCounts={tabCounts} />
+        <SummaryCards summary={summary || DEFAULT_SUMMARY} tabCounts={tabCounts} report={report} />
 
         {/* Results error */}
         {resultsError && (
@@ -193,6 +202,24 @@ export default function App() {
           onMarkMatched={handleMarkMatched}
         />
       </main>
+      <AgentPanel
+        isOpen={isAgentOpen}
+        onClose={() => setIsAgentOpen(false)}
+        batchId={selectedBatchId}
+      />
+      <button
+        type="button"
+        className={styles.agentFab}
+        aria-label={isAgentOpen ? 'Close reconciliation assistant' : 'Ask the reconciliation assistant'}
+        aria-expanded={isAgentOpen}
+        onClick={() => setIsAgentOpen((isOpen) => !isOpen)}
+      >
+        <span className={styles.agentFabIcon} aria-hidden="true">
+          <span className={`material-symbols-outlined ${styles.forumIcon}`}>forum</span>
+          <span className={`material-symbols-outlined ${styles.sparklesIcon}`}>auto_awesome</span>
+        </span>
+        <span className={styles.agentFabLabel}>Ask agent</span>
+      </button>
     </>
   )
 }

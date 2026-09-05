@@ -54,5 +54,9 @@ class Settings(BaseSettings):
     MAX_CANDIDATE_POOL: int = 50
     MAX_GROUP_SIZE: int = 6
 
+    # ── Groq / QnA Agent ─────────────────────────────────────────────────────
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.1-8b-instant"
+
 
 settings = Settings()

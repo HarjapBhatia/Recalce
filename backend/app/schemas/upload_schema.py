@@ -39,3 +39,27 @@ class BatchListItem(BaseModel):
     status: BatchStatus
     uploaded_at: datetime
     error_message: str | None = None
+
+
+class ExceptionRecord(BaseModel):
+    """A single exception record (UNRECONCILED or UNDER_REVIEW) for the batch report."""
+
+    transaction_id: str | None = None
+    bank_reference_id: str | None = None
+    status: str
+    reason: str | None = None
+
+
+class BatchReportResponse(BaseModel):
+    """Response body for GET /api/v1/batches/{batch_id}/report."""
+
+    batch_id: uuid.UUID
+    uploaded_at: datetime
+    completed_at: datetime | None = None
+    match_rate: float
+    match_rate_definition: str
+    throughput: float | None = None
+    processing_time_seconds: float | None = None
+    exception_list: list[ExceptionRecord]
+    anomaly_count: int
+    anomaly_breakdown: dict[str, int]
