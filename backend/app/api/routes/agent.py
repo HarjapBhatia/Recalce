@@ -135,7 +135,7 @@ TOOLS = [
                 "properties": {
                     "limit": {
                         "type": "integer",
-                        "description": "Number of anomaly records to return. Defaults to 10, max 25.",
+                        "description": "Number of anomaly records to return. Defaults to 5, max 10.",
                     }
                 },
                 "required": [],
@@ -254,7 +254,6 @@ If data is unavailable or a tool returned no results, say so clearly.
 - Use **bold** for: transaction IDs, amounts, merchant IDs, statuses (MATCHED, UNRECONCILED, UNDER_REVIEW), percentages, and other key terms.
 - Use numbered lists for multiple records.
 - After every list of records, write a brief 1-2 sentence analysis summarizing the single key takeaway.
-- End every response with ###END### on its own line. No exceptions.
 
 - SCOPE CONTEXT :
 You are scoped to a single reconciliation batch. The batch is automatically provided in every request. Never ask the user for a batch ID.\""""
@@ -312,19 +311,17 @@ def tool_get_batch_summary(db: Session, batch_id: uuid.UUID) -> dict:
     }
 
 
-def tool_get_anomaly_list(db: Session, batch_id: uuid.UUID, limit: int = 10) -> dict:
-    limit = min(max(1, limit), 25)
+def tool_get_anomaly_list(db: Session, batch_id: uuid.UUID, limit: int = 5) -> dict:
+    limit = min(max(1, limit), 10)
 
     rows = db.execute(
         select(
             ReconciliationResult.status,
             ReconciliationResult.match_type,
             ReconciliationResult.anomaly_reason,
-            ReconciliationResult.fee_deducted,
             InternalLedger.transaction_id,
             InternalLedger.amount,
             InternalLedger.merchant_id,
-            InternalLedger.timestamp,
         )
         .outerjoin(InternalLedger, ReconciliationResult.internal_txn_id == InternalLedger.id)
         .where(
@@ -335,24 +332,25 @@ def tool_get_anomaly_list(db: Session, batch_id: uuid.UUID, limit: int = 10) -> 
         .limit(limit)
     ).all()
 
-    records = [
-        {
-            "transaction_id": r.transaction_id,
+    records = []
+    for r in rows:
+        reason = r.anomaly_reason or ""
+        if len(reason) > 80:
+            reason = reason[:77] + "..."
+        records.append({
+            "txn_id": r.transaction_id,
             "amount": float(r.amount) if r.amount is not None else None,
-            "merchant_id": r.merchant_id,
-            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "merchant": r.merchant_id,
             "status": r.status.value,
             "match_type": r.match_type.value,
-            "anomaly_reason": r.anomaly_reason,
-        }
-        for r in rows
-    ]
+            "reason": reason,
+        })
 
-    return {"anomaly_count_returned": len(records), "anomalies": records}
+    return {"count": len(records), "anomalies": records}
 
 
-def tool_get_exception_list(db: Session, batch_id: uuid.UUID, limit: int = 10) -> dict:
-    limit = min(max(1, limit), 25)
+def tool_get_exception_list(db: Session, batch_id: uuid.UUID, limit: int = 5) -> dict:
+    limit = min(max(1, limit), 10)
 
     rows = db.execute(
         select(
@@ -363,11 +361,8 @@ def tool_get_exception_list(db: Session, batch_id: uuid.UUID, limit: int = 10) -
             InternalLedger.transaction_id,
             InternalLedger.amount,
             InternalLedger.merchant_id,
-            BankStatement.bank_reference_id,
-            BankStatement.deposit_amount,
         )
         .outerjoin(InternalLedger, ReconciliationResult.internal_txn_id == InternalLedger.id)
-        .outerjoin(BankStatement, ReconciliationResult.bank_txn_id == BankStatement.id)
         .where(
             ReconciliationResult.batch_id == batch_id,
             ReconciliationResult.status.in_([ResultStatus.UNRECONCILED, ResultStatus.UNDER_REVIEW]),
@@ -375,20 +370,20 @@ def tool_get_exception_list(db: Session, batch_id: uuid.UUID, limit: int = 10) -
         .limit(limit)
     ).all()
 
-    records = [
-        {
-            "transaction_id": r.transaction_id,
-            "bank_reference_id": r.bank_reference_id,
-            "amount": float(r.amount) if r.amount is not None else (float(r.deposit_amount) if r.deposit_amount is not None else None),
-            "merchant_id": r.merchant_id,
+    records = []
+    for r in rows:
+        reason = r.anomaly_reason or r.unreconciled_reason or ""
+        if len(reason) > 80:
+            reason = reason[:77] + "..."
+        records.append({
+            "txn_id": r.transaction_id,
+            "amount": float(r.amount) if r.amount is not None else None,
+            "merchant": r.merchant_id,
             "status": r.status.value,
-            "match_type": r.match_type.value,
-            "reason": r.anomaly_reason or r.unreconciled_reason,
-        }
-        for r in rows
-    ]
+            "reason": reason,
+        })
 
-    return {"exception_count_returned": len(records), "exceptions": records}
+    return {"count": len(records), "exceptions": records}
 
 
 def tool_get_transaction_details(db: Session, batch_id: uuid.UUID, transaction_id: str) -> dict:
@@ -605,7 +600,6 @@ async def agent_chat(req: ChatRequest, db: Session = Depends(get_db)):
                 "tools": TOOLS,
                 "tool_choice": "auto",
                 "max_tokens": 1500,
-                "stop": ["###END###"],
             },
         )
     except Exception as e:
@@ -644,7 +638,6 @@ async def agent_chat(req: ChatRequest, db: Session = Depends(get_db)):
                     "model": resolved_model,
                     "messages": llm_messages,
                     "max_tokens": 1500,
-                    "stop": ["###END###"],
                 },
             )
             final_message = second_response.choices[0].message
@@ -652,9 +645,5 @@ async def agent_chat(req: ChatRequest, db: Session = Depends(get_db)):
         except Exception as e:
             logger.error("Gemini API Error (second pass): %s", e)
             raise HTTPException(status_code=500, detail="Error generating the final response.")
-
-    for msg in new_messages:
-        if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
-            msg["content"] = msg["content"].replace("###END###", "").rstrip()
 
     return {"messages": new_messages}
