@@ -6,18 +6,31 @@ FastAPI application entry point.
 Registers all routers and sets up CORS, lifespan events, and health check.
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.api.routes import upload, status, results, agent
+from app.api.routes.agent import resolve_model
 from app.core.config import settings
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Discover the best available Gemini model once at boot.
+    # All subsequent requests use the cached result with zero overhead.
+    await resolve_model()
+    yield
+
 
 app = FastAPI(
     title="Recalce",
     description="Automated bank reconciliation engine",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
