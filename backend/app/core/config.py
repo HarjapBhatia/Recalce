@@ -1,8 +1,7 @@
 """
 app/core/config.py
-------------------
-Centralised settings loaded from .env via pydantic-settings.
 
+Centralised settings loaded from .env via pydantic-settings.
 All environment variables are read once here and referenced throughout
 the codebase as `from app.core.config import settings`.
 """
@@ -33,17 +32,6 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://localhost/reconflow"
 
-    # Redis and Celery
-    REDIS_URL: str = "redis://localhost:6379/0"
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
-
-    # Backblaze B2
-    B2_APPLICATION_KEY_ID: str = ""
-    B2_APPLICATION_KEY: str = ""
-    B2_BUCKET_NAME: str = "reconflow-uploads"
-    B2_ENDPOINT_URL: str = ""
-
     # Kaggle 
     KAGGLE_API_TOKEN: str = ""
 
@@ -54,7 +42,7 @@ class Settings(BaseSettings):
     MAX_CANDIDATE_POOL: int = 50
     MAX_GROUP_SIZE: int = 6
 
-    # ── LLM / QnA Agent ──────────────────────────────────────────────────────
+    # LLM and QnA Agent
     GEMINI_API_KEY: str = ""
 
 

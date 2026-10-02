@@ -1,1 +1,1 @@
-"""app/tasks package — Celery task definitions."""
+"""app/tasks package — pipeline step functions."""

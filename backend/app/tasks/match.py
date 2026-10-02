@@ -1,14 +1,14 @@
 """
 app/tasks/match.py
--------------------
-Celery task: Stage 2 of the processing chain.
+
+Pipeline Stage 2: Matching.
 
 Responsibility:
-  1. Transition the batch from INGESTING to MATCHING.
-  2. Delegate all reconciliation logic to matching_engine.run_waterfall().
-  3. If the waterfall raises any exception, set the batch to FAILED and
-     re-raise so Celery logs the full traceback.
-  4. On success, pass batch_id to the next task in the chain (ml_triage).
+1. Transition the batch from INGESTING to MATCHING.
+2. Delegate all reconciliation logic to matching_engine.run_waterfall().
+3. If the waterfall raises any exception, set the batch to FAILED and
+    re-raise so the pipeline logs the full traceback.
+4. On success, control passes to the next stage (ml_triage).
 
 Batch status transitions: INGESTING -> MATCHING -> (passed to ml_triage)
 """
@@ -18,27 +18,20 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.core.celery_app import celery_app
-from app.db.session import SessionLocal
 from app.models.reconciliation_batch import BatchStatus, ReconciliationBatch
 from app.services.matching_engine import run_waterfall
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, name="tasks.match")
-def match(self, batch_id: str) -> str:
+def run_match_step(db: Session, batch_id: uuid.UUID) -> None:
     """
     Run the four-pass waterfall matching engine for a completed ingestion run.
 
-    Receives batch_id as a string from the ingest task via the Celery chain.
-    Returns batch_id as a string so the chain passes it to ml_triage.
+    Receives the shared DB session and batch_id from the pipeline orchestrator.
     """
-    db: Session = SessionLocal()
-    batch_uuid = uuid.UUID(batch_id)
-
     try:
-        batch = db.get(ReconciliationBatch, batch_uuid)
+        batch = db.get(ReconciliationBatch, batch_id)
         if batch is None:
             raise ValueError(f"Batch {batch_id} not found in the database.")
 
@@ -46,7 +39,7 @@ def match(self, batch_id: str) -> str:
         db.commit()
         logger.info("Matching started: batch=%s", batch_id)
 
-        summary = run_waterfall(batch_id, db)
+        summary = run_waterfall(str(batch_id), db)
 
         logger.info(
             "Matching complete, handing off to ml_triage: batch=%s exact=%d "
@@ -58,20 +51,16 @@ def match(self, batch_id: str) -> str:
             summary["unreconciled_internal"],
             summary["unreconciled_bank"],
         )
-        return batch_id
 
     except Exception as exc:
         db.rollback()
         try:
-            batch = db.get(ReconciliationBatch, batch_uuid)
+            batch = db.get(ReconciliationBatch, batch_id)
             if batch:
                 batch.status = BatchStatus.FAILED
                 batch.error_message = str(exc)
                 db.commit()
         except Exception:
             pass
-        logger.exception("Match task raised an unexpected error: batch=%s", batch_id)
+        logger.exception("Match step raised an unexpected error: batch=%s", batch_id)
         raise
-
-    finally:
-        db.close()

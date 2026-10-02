@@ -1,8 +1,7 @@
 """
 app/api/routes/results.py
---------------------------
-GET /api/v1/results/{batch_id}
 
+GET /api/v1/results/{batch_id}
 Returns the full reconciliation result set for a completed batch, including
 a summary of match counts, individual result rows with joined transaction
 details, and any row-level validation errors from ingestion.
@@ -58,7 +57,7 @@ def mark_matched(
         raise HTTPException(status_code=404, detail="Result not found")
 
     if transaction_ids:
-        # --- Ambiguous group resolution ---
+        # Ambiguous group resolution 
         if result.group_id is None:
             raise HTTPException(status_code=400, detail="This result is not part of a group.")
 

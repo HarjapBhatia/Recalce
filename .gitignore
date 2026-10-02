@@ -41,7 +41,7 @@ logs/
 .pytest_cache/
 
 # ── Custom ───────────────────────────────────────────────────────────────────
-context/
+docs/
 scratch/
 test_*.py
 backend/test_*.py

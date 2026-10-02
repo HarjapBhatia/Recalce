@@ -1,8 +1,8 @@
 """
 app/api/routes/status.py
--------------------------
-GET /api/v1/status/{batch_id}  -- poll the status of a reconciliation batch.
-GET /api/v1/batches            -- list all previous batches for the history view.
+
+GET /api/v1/status/{batch_id}       poll the status of a reconciliation batch.
+GET /api/v1/batches                 list all previous batches for the history view.
 """
 
 import uuid
@@ -29,6 +29,13 @@ from app.schemas.upload_schema import (
 
 router = APIRouter(tags=["status"])
 
+'''
+- scalar_one_or_none() returns an object if exactly one row is returned
+- one_or_none() returns the object if one row is returned
+- scalar_one() returns the object if exactly one row is returned, raises an error if zero or more than one rows are returned
+- scalars() returns a list of objects, one for each row returned
+- scalar() returns the first column of the first row, or None if no rows are returned
+'''
 
 @router.get("/status/{batch_id}", response_model=BatchStatusResponse)
 def get_status(
@@ -37,7 +44,6 @@ def get_status(
 ) -> BatchStatusResponse:
     """
     Poll the current status of a reconciliation batch.
-
     Returns 404 if the batch_id does not exist.
     """
     batch = db.execute(
@@ -62,7 +68,6 @@ def get_status(
 def list_batches(db: Session = Depends(get_db)) -> list[BatchListItem]:
     """
     List all reconciliation batches, most recent first.
-
     Used by the frontend history view to show past upload runs.
     """
     batches = db.execute(
@@ -89,10 +94,9 @@ def get_batch_report(
 ) -> BatchReportResponse:
     """
     Return the batch report artifact for a completed reconciliation run.
-
     Includes:
     - match_rate: matched / (total_internal + total_bank)
-      Under-review records are NOT counted as matched; they appear in the
+      Under-review records are NOT counted as matched. they appear in the
       exception_list with status UNDER_REVIEW.
     - throughput: total_records / processing_time_seconds (None if timestamps
       were not recorded, e.g. for batches run before this feature was deployed)
@@ -115,7 +119,7 @@ def get_batch_report(
             detail=f"Batch is not complete. Current status: {batch.status.value}",
         )
 
-    # --- Row counts (denominator for match rate and throughput) ---
+    # Row counts (denominator for match rate and throughput)
     total_internal: int = db.execute(
         select(func.count())
         .select_from(InternalLedger)
@@ -130,7 +134,7 @@ def get_batch_report(
 
     total_records = total_internal + total_bank
 
-    # --- Matched count (MATCHED status only; UNDER_REVIEW excluded) ---
+    # Matched count (MATCHED status only. UNDER_REVIEW excluded) 
     matched_count: int = db.execute(
         select(func.count())
         .select_from(ReconciliationResult)
@@ -142,7 +146,7 @@ def get_batch_report(
 
     match_rate = round(matched_count / total_records, 4) if total_records > 0 else 0.0
 
-    # --- Processing time and throughput ---
+    # Processing time and throughput
     processing_time_seconds: float | None = None
     throughput: float | None = None
     if batch.processing_started_at and batch.processing_completed_at:
@@ -151,7 +155,7 @@ def get_batch_report(
         if processing_time_seconds > 0:
             throughput = round(total_records / processing_time_seconds, 2)
 
-    # --- Exception list: UNRECONCILED and UNDER_REVIEW results ---
+    # Exception list: UNRECONCILED and UNDER_REVIEW results
     exception_results = db.execute(
         select(
             ReconciliationResult,
@@ -183,7 +187,7 @@ def get_batch_report(
             )
         )
 
-    # --- Anomaly count and breakdown ---
+    # Anomaly count and breakdown
     anomaly_results = db.execute(
         select(ReconciliationResult.anomaly_reason)
         .where(

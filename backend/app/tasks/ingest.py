@@ -1,22 +1,17 @@
 """
 app/tasks/ingest.py
---------------------
-Celery task: Stage 1 of the processing chain.
+
+Pipeline Stage 1: Ingestion.
 
 Responsibility:
-  1. Download both CSV files from B2 using the keys stored on the batch row.
-  2. Parse each file with csv.DictReader (NOT pandas, to avoid silent float
-     coercion on decimal amounts).
-  3. Validate every row individually through the Pydantic row schemas.
-     - Valid rows are collected and bulk-inserted into the DB.
-     - Invalid rows are recorded in BatchValidationError with their row
-       number and the exact validation message.
-  4. Detect duplicate transaction_id values within the same upload -- this
-     is an integrity error, not a formatting error, and is handled after
-     parsing, not inside the Pydantic model.
-  5. If zero valid rows survive for either file, the batch is set to FAILED
-     with a descriptive message so the user knows the file format is wrong.
-  6. On success, passes batch_id to the next task in the chain (match).
+1. Read both CSV files from the temporary binary columns stored on the batch row.
+2. Parse each file with csv.DictReader (NOT pandas, to avoid silent float coercion on decimal amounts).
+3. Validate every row individually through the Pydantic row schemas.
+    - Valid rows are collected and bulk-inserted into the DB.
+    - Invalid rows are recorded in BatchValidationError with their row number and the exact validation message.
+4. Detect duplicate transaction_id values within the same upload, this is an integrity error, not a formatting error, and is handled after parsing, not inside the Pydantic model.
+5. If zero valid rows survive for either file, the batch is set to FAILED with a descriptive message so the user knows the file format is wrong.
+6. On success, the batch transitions to the next pipeline stage (match).
 
 Batch status transitions: PENDING -> INGESTING -> (passed to match)
 """
@@ -30,22 +25,16 @@ from pydantic import ValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.celery_app import celery_app
-from app.db.session import SessionLocal
 from app.models.bank_statement import BankStatement, BankStatus
 from app.models.internal_ledger import InternalLedger, LedgerStatus
 from app.models.reconciliation_batch import BatchStatus, ReconciliationBatch
 from app.models.reconciliation_result import BatchValidationError, FileType
 from app.schemas.row_schemas import BankStatementRow, InternalLedgerRow
-from app.services import b2_service
 
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
 
 def _set_batch_status(db: Session, batch: ReconciliationBatch, status: BatchStatus, message: str | None = None) -> None:
     """Update the batch status and optional error message, then commit."""
@@ -204,31 +193,21 @@ def _ingest_bank_statement(
     return len(valid_orm_rows), invalid_count
 
 
-# ---------------------------------------------------------------------------
-# Celery task
-# ---------------------------------------------------------------------------
+# Pipeline entry point
 
-
-@celery_app.task(bind=True, name="tasks.ingest")
-def ingest(self, batch_id: str) -> str:
+def ingest_batch(db: Session, batch_id: uuid.UUID) -> None:
     """
-    Download CSVs from B2, validate each row, and bulk-insert into the DB.
+    Read CSV bytes from the database, validate each row, and bulk-insert into the DB.
 
-    This is Stage 1 of the Celery task chain: ingest -> match -> ml_triage.
+    This is Stage 1 of the pipeline: ingest -> match -> ml_triage.
 
-    The task is bound (bind=True) so that self.retry() is available if we
-    want to add retry logic later (e.g., on transient B2 or DB errors).
-
-    Returns batch_id as a string so the Celery chain passes it automatically
-    to the next task (match) as its first positional argument.
+    Reads the raw file bytes directly from the ReconciliationBatch row's
+    internal_file_content and bank_file_content columns (temporary storage).
     """
-    db: Session = SessionLocal()
-    batch_uuid = uuid.UUID(batch_id)
-
     try:
         # Retrieve the batch record and move it to INGESTING state immediately
         # so the frontend can show progress to the user.
-        batch = db.get(ReconciliationBatch, batch_uuid)
+        batch = db.get(ReconciliationBatch, batch_id)
         if batch is None:
             raise ValueError(f"Batch {batch_id} not found in the database.")
 
@@ -237,15 +216,21 @@ def ingest(self, batch_id: str) -> str:
         db.commit()
         logger.info("Ingestion started: batch=%s", batch_id)
 
-        # Download both files from B2. These are blocking calls; B2 latency
-        # is the main source of delay in this task for small files.
-        internal_bytes = b2_service.download_file(batch.internal_file_key)
-        bank_bytes = b2_service.download_file(batch.bank_file_key)
+        # Read file bytes from the database (temporary storage columns)
+        internal_bytes = batch.internal_file_content
+        bank_bytes = batch.bank_file_content
+
+        if not internal_bytes or not bank_bytes:
+            _set_batch_status(
+                db, batch, BatchStatus.FAILED,
+                "File content missing from database. Upload may have been corrupted."
+            )
+            raise ValueError(f"File content missing for batch {batch_id}")
 
         # Ingest each file independently so a bad bank statement does not
         # prevent valid ledger rows from being written, and vice versa.
-        internal_valid, _ = _ingest_internal_ledger(db, batch_uuid, internal_bytes)
-        bank_valid, _ = _ingest_bank_statement(db, batch_uuid, bank_bytes)
+        internal_valid, _ = _ingest_internal_ledger(db, batch_id, internal_bytes)
+        bank_valid, _ = _ingest_bank_statement(db, batch_id, bank_bytes)
 
         # If either file produced zero valid rows, the batch cannot be
         # reconciled. Fail fast with a message the user can act on.
@@ -257,7 +242,7 @@ def ingest(self, batch_id: str) -> str:
                 "transaction_id, amount, timestamp, merchant_id."
             )
             logger.error("Ingestion failed (no valid internal rows): batch=%s", batch_id)
-            return batch_id
+            raise ValueError("Internal ledger contained no valid rows.")
 
         if bank_valid == 0:
             _set_batch_status(
@@ -267,24 +252,19 @@ def ingest(self, batch_id: str) -> str:
                 "bank_reference_id, deposit_amount, settlement_date."
             )
             logger.error("Ingestion failed (no valid bank rows): batch=%s", batch_id)
-            return batch_id
+            raise ValueError("Bank statement contained no valid rows.")
 
-        logger.info("Ingestion complete, handing off to match task: batch=%s", batch_id)
-        # Return batch_id so the chain passes it to match() automatically.
-        return batch_id
+        logger.info("Ingestion complete, handing off to match: batch=%s", batch_id)
 
     except Exception as exc:
         # Catch-all: mark the batch as FAILED so it does not remain stuck in
-        # INGESTING indefinitely. Re-raise so Celery logs the full traceback.
+        # INGESTING indefinitely. Re-raise so the pipeline logs the full traceback.
         db.rollback()
         try:
-            batch = db.get(ReconciliationBatch, batch_uuid)
+            batch = db.get(ReconciliationBatch, batch_id)
             if batch:
                 _set_batch_status(db, batch, BatchStatus.FAILED, str(exc))
         except Exception:
             pass  # best effort; if the DB is down, we cannot write the failure
-        logger.exception("Ingestion task raised an unexpected error: batch=%s", batch_id)
+        logger.exception("Ingestion raised an unexpected error: batch=%s", batch_id)
         raise
-
-    finally:
-        db.close()

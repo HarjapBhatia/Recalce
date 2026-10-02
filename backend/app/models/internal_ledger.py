@@ -1,7 +1,7 @@
 """
 app/models/internal_ledger.py
-------------------------------
-InternalLedger -- one row per internal transaction from the uploaded CSV.
+
+InternalLedger - one row per internal transaction from the uploaded CSV.
 
 amount is NUMERIC(19,4) -- never float. Parsed from CSV string to Decimal
 by the Pydantic row schema before hitting the DB.
@@ -49,7 +49,7 @@ class InternalLedger(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # -- Relationships ----------------------------------------------------------
+    # Relationships
     batch: Mapped["ReconciliationBatch"] = relationship(
         "ReconciliationBatch", back_populates="ledger_entries"
     )

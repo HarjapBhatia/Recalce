@@ -1,7 +1,7 @@
 """
 app/models/bank_statement.py
------------------------------
-BankStatement -- one row per bank-side record from the uploaded CSV.
+
+BankStatement - one row per bank-side record from the uploaded CSV.
 """
 
 import enum
@@ -45,7 +45,7 @@ class BankStatement(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # -- Relationships ----------------------------------------------------------
+    # Relationships 
     batch: Mapped["ReconciliationBatch"] = relationship(
         "ReconciliationBatch", back_populates="bank_entries"
     )

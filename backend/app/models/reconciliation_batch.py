@@ -1,7 +1,7 @@
 """
 app/models/reconciliation_batch.py
-------------------------------------
-ReconciliationBatch -- one row per upload run.
+
+ReconciliationBatch - one row per upload run.
 
 Every upload creates a batch with a stable ID. The frontend polls
 GET /status/{batch_id} against this table.
@@ -12,9 +12,9 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, String, func
+from sqlalchemy import DateTime, Enum, LargeBinary, String, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, deferred
 
 from app.db.session import Base
 
@@ -42,8 +42,13 @@ class ReconciliationBatch(Base):
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    internal_file_key: Mapped[str] = mapped_column(String, nullable=False) # B2 key
-    bank_file_key: Mapped[str] = mapped_column(String, nullable=False) # B2 key
+    internal_file_key: Mapped[str] = mapped_column(String, nullable=True)   # legacy (unused)
+    bank_file_key: Mapped[str] = mapped_column(String, nullable=True)       # legacy (unused)
+    # Temporary storage for uploaded CSV file contents.
+    # Deferred so regular queries never load the blob data.
+    # Cleared to NULL immediately after pipeline processing completes.
+    internal_file_content = deferred(mapped_column(LargeBinary, nullable=True))
+    bank_file_content = deferred(mapped_column(LargeBinary, nullable=True))
     status: Mapped[BatchStatus] = mapped_column(
         Enum(BatchStatus), nullable=False, default=BatchStatus.PENDING
     )
@@ -55,7 +60,7 @@ class ReconciliationBatch(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    # -- Relationships ----------------------------------------------------------
+    # Relationships 
     # One batch owns many ledger entries, bank entries, results, and errors.
     # cascade="all, delete-orphan" removes children when the batch is deleted.
     ledger_entries: Mapped[list["InternalLedger"]] = relationship(

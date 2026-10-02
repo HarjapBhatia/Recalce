@@ -7,7 +7,7 @@
 const rawBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 const BASE = rawBase.endsWith('/api/v1') ? rawBase : `${rawBase.replace(/\/+$/, '')}/api/v1`
 
-/** POST /upload — multipart, both CSV files */
+/** POST /upload - multipart, both CSV files */
 export async function uploadFiles(internalFile, bankFile) {
   const form = new FormData()
   form.append('internal_ledger', internalFile)

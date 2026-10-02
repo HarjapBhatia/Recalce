@@ -1,40 +1,36 @@
 """
 app/services/matching_engine.py
----------------------------------
-Five-pass waterfall reconciliation engine.
 
+Five-pass waterfall reconciliation engine.
 All passes execute in strict order. Each pass operates only on rows that
 remain PENDING after earlier passes, so once a row is claimed it is never
 re-examined.
 
-Pass 1 -- EXACT:
-  Same transaction_id (or bank_reference_id), same amount, same calendar day.
-  This is the cheapest and most confident match.
+Pass 1 - EXACT:
+Same transaction_id (or bank_reference_id), same amount, same calendar day. This is the cheapest and most confident match.
 
-Pass 2 -- DATE_SHIFT:
-  Same IDs, same amount, but settlement_date is 1 to SETTLEMENT_WINDOW_DAYS
-  days later than the transaction timestamp.date(). Covers normal settlement
-  delays that do not involve a fee change.
+Pass 2 - DATE_SHIFT:
+Same IDs, same amount, but settlement_date is 1 to SETTLEMENT_WINDOW_DAYS days later than the transaction 
+timestamp.date(). Covers normal settlement delays that do not involve a fee change.
 
-Pass 3 -- FEE_ADJUSTED:
-  Same IDs, date within the settlement window, but deposit_amount is between
-  (amount * (1 - FEE_TOLERANCE_MAX)) and amount. Covers the common case where
-  a payment processor deducts a small fee before settling.
+Pass 3 - FEE_ADJUSTED:
+Same IDs, date within the settlement window, but deposit_amount is between (amount * (1 - FEE_TOLERANCE_MAX)) 
+and amount. Covers the common case where a payment processor deducts a small fee before settling.
 
-Pass 4 -- MANY_TO_ONE:
-  Subset-sum pass: finds groups of 2-MAX_GROUP_SIZE internal transactions from
-  the same merchant that together sum (within fee tolerance) to a single bank
-  deposit. Uses branch-and-bound DFS in integer cents to enumerate all valid
-  subsets. Deposits with a single valid subset are MATCHED; deposits with
-  multiple competing subsets are UNDER_REVIEW. Results are persisted as
-  ReconciliationGroup + ReconciliationGroupMember rows, with a corresponding
-  ReconciliationResult row (match_type=MANY_TO_ONE) per internal transaction in
-  MATCHED groups, and a single bank-side ReconciliationResult for UNDER_REVIEW
-  groups.
+Pass 4 - MANY_TO_ONE:
+Subset-sum pass: finds groups of 2-MAX_GROUP_SIZE internal transactions from
+the same merchant that together sum (within fee tolerance) to a single bank
+deposit. Uses branch-and-bound DFS in integer cents to enumerate all valid
+subsets. Deposits with a single valid subset are MATCHED; deposits with
+multiple competing subsets are UNDER_REVIEW. Results are persisted as
+ReconciliationGroup + ReconciliationGroupMember rows, with a corresponding
+ReconciliationResult row (match_type=MANY_TO_ONE) per internal transaction in
+MATCHED groups, and a single bank-side ReconciliationResult for UNDER_REVIEW
+groups.
 
-Pass 5 -- UNRECONCILED:
-  Any PENDING row remaining after passes 1-4 could not be matched. Each
-  surviving internal row and bank row gets its own UNRECONCILED result record.
+Pass 5 - UNRECONCILED:
+Any PENDING row remaining after passes 1-4 could not be matched. Each
+surviving internal row and bank row gets its own UNRECONCILED result record.
 
 The function is a plain Python function, not a Celery task. The match task
 in app/tasks/match.py owns the DB session lifecycle and calls run_waterfall.
@@ -61,11 +57,7 @@ from app.services.subset_sum import BankDeposit, CandidateRow, run_many_to_one_p
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _create_matched_result(
     db: Session,
     batch_id: uuid.UUID,
@@ -75,7 +67,6 @@ def _create_matched_result(
 ) -> None:
     """
     Write one ReconciliationResult row and update both source rows to MATCHED.
-
     fee_deducted is computed here rather than in the Pydantic schema because
     it is only meaningful once we know which bank row the internal row matched
     to. For EXACT and DATE_SHIFT matches the fee is zero; for FEE_ADJUSTED it
@@ -124,11 +115,7 @@ def _create_unreconciled_bank(db: Session, batch_id: uuid.UUID, row: BankStateme
     row.status = BankStatus.UNMATCHED
 
 
-# ---------------------------------------------------------------------------
-# Four-pass waterfall
-# ---------------------------------------------------------------------------
-
-
+# waterfall model
 def run_waterfall(batch_id: str, db: Session) -> dict:
     """
     Execute all four reconciliation passes for a batch in memory and persist in bulk.
@@ -170,9 +157,7 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
 
     results_to_insert: list[ReconciliationResult] = []
 
-    # -------------------------------------------------------------------
-    # Pass 1: EXACT -- same reference ID, same amount, same calendar day
-    # -------------------------------------------------------------------
+    # Pass 1: EXACT - same reference ID, same amount, same calendar day
     bank_index_exact: dict[tuple, list[BankStatement]] = {}
     for bank_row in unmatched_bank.values():
         key = (bank_row.bank_reference_id, bank_row.deposit_amount, bank_row.settlement_date)
@@ -198,9 +183,7 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
             )
             summary["exact"] += 1
 
-    # -------------------------------------------------------------------
-    # Pass 2: DATE_SHIFT -- same IDs and amount, settlement up to N days late
-    # -------------------------------------------------------------------
+    # Pass 2: DATE_SHIFT - same IDs and amount, settlement up to N days late
     window = settings.SETTLEMENT_WINDOW_DAYS
     bank_index_date: dict[tuple, list[BankStatement]] = {}
     for bank_row in unmatched_bank.values():
@@ -234,9 +217,7 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
             )
             summary["date_shift"] += 1
 
-    # -------------------------------------------------------------------
-    # Pass 3: FEE_ADJUSTED -- same IDs, date within window, amount reduced by fee
-    # -------------------------------------------------------------------
+    # Pass 3: FEE_ADJUSTED - same IDs, date within window, amount reduced by fee
     fee_tolerance = settings.FEE_TOLERANCE_MAX
     bank_index_fee: dict[str, list[BankStatement]] = {}
     for bank_row in unmatched_bank.values():
@@ -269,9 +250,7 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
             )
             summary["fee_adjusted"] += 1
 
-    # -------------------------------------------------------------------
-    # Pass 4: MANY_TO_ONE -- subset-sum group settlement matching
-    # -------------------------------------------------------------------
+    # Pass 4: MANY_TO_ONE - subset-sum group settlement matching
     # Convert remaining ORM objects to lightweight dataclasses so the
     # subset_sum module stays free of SQLAlchemy dependencies and is
     # independently unit-testable.
@@ -379,9 +358,7 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
 
                 summary["under_review_groups"] += 1
 
-    # -------------------------------------------------------------------
-    # Pass 5: UNRECONCILED -- remaining unmatched rows
-    # -------------------------------------------------------------------
+    # Pass 5: UNRECONCILED - remaining unmatched rows
     for int_id, int_row in unmatched_internal.items():
         # If the transaction_id appears as a bank_reference_id in the original
         # bank rows, we know the IDs matched but amounts/dates didn't reconcile.
@@ -425,9 +402,7 @@ def run_waterfall(batch_id: str, db: Session) -> dict:
         )
         summary["unreconciled_bank"] += 1
 
-    # -------------------------------------------------------------------
     # Bulk Database Persistence (Fast single-query execution)
-    # -------------------------------------------------------------------
     # Derive IDs from the in-memory dictionaries rather than from ORM
     # object attributes.  This avoids marking objects dirty and prevents
     # SQLAlchemy autoflush from issuing thousands of individual UPDATEs.

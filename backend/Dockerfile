@@ -31,5 +31,5 @@ RUN chmod +x /app/entrypoint.sh
 # Expose port (default 8000, Render sets $PORT dynamically)
 EXPOSE 8000
 
-# Run both Celery and FastAPI in the single free container
+# Run FastAPI server via entrypoint script
 ENTRYPOINT ["/app/entrypoint.sh"]

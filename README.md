@@ -32,7 +32,7 @@ In the real world, these two ledgers **never line up 1:1**.
 **Recalce** is a high-throughput, distributed financial reconciliation platform that automates this process. You upload your internal ledger and bank statement, and the system does the rest.
 
 ### Core Capabilities
-* **Distributed Task Pipeline**: Asynchronous batch ingestion via FastAPI, Celery, and Redis, decoupling API request handling from compute-heavy algorithmic processing.
+* **Background Task Pipeline**: Asynchronous batch ingestion via FastAPI BackgroundTasks, streamlining deployment by removing the need for external brokers like Celery or Redis.
 * **Financial Precision**: Eliminates floating-point rounding errors by strictly using integer-cent and Python `Decimal` arithmetic.
 * **Fault-Tolerant Ingestion**: Validates massive CSVs row-by-row using Pydantic. Corrupted rows are isolated and tracked in audit tables without failing the entire batch workflow.
 * **Interactive Dashboard**: A React 19 / Vite frontend featuring live lifecycle polling, amount sorting, server-side search, and CSV exports.
@@ -50,16 +50,11 @@ graph LR
 
     subgraph API Gateway
         API[FastAPI]
-    end
-
-    subgraph Task Queue
-        Broker[(Redis)]
-        Worker[Celery Worker]
+        BackgroundTasks[BackgroundTasks]
     end
 
     subgraph Storage
         DB[(PostgreSQL)]
-        B2[(Backblaze B2)]
     end
 
     subgraph Core Engine
@@ -68,22 +63,21 @@ graph LR
     end
 
     subgraph AI Assistant
-        LLM[Groq API]
+        LLM[Gemini API]
     end
 
     UI -->|1. Upload CSVs| API
-    API -->|2. Stream files| B2
-    API -->|3. Enqueue Tasks| Broker
+    API -->|2. Save files| DB
+    API -->|3. Enqueue Job| BackgroundTasks
     API -->|4. HTTP 202 Accepted| UI
     
-    Broker -->|5. Consume Tasks| Worker
-    Worker -->|6. Fetch CSVs| B2
-    
-    Worker -->|7a. Run Matcher| Recon
-    Worker -->|7b. Score Anomalies| ML
+    BackgroundTasks -->|5. Read CSVs| DB
+    BackgroundTasks -->|6a. Run Matcher| Recon
+    BackgroundTasks -->|6b. Score Anomalies| ML
     
     Recon -->|Save Matches| DB
     ML -->|Flag Anomalies| DB
+    BackgroundTasks -->|7. Cleanup Raw Data| DB
     
     UI -.->|8. Poll Results| API
     API -.->|9. Query Status| DB
@@ -117,7 +111,7 @@ Deterministic rules catch predictable accounting behavior but miss unpredictable
 
 ## AI Reconciliation Assistant (LLM)
 
-Recalce features a built-in, context-aware AI Assistant powered by Groq (`llama-3.1-8b-instant`). The assistant acts as a financial analyst for your reconciliation batch.
+Recalce features a built-in, context-aware AI Assistant powered by Google Gemini (`gemini-3.5-flash`). The assistant acts as a financial analyst for your reconciliation batch.
 
 * **Function Calling (Tools)**: The agent has native access to PostgreSQL through SQLAlchemy tools, allowing it to autonomously fetch merchant metrics, anomaly lists, exception reports, and transaction details without exposing internal IDs.
 * **Strict Scope Enforcement**: The system prompt is hardened against prompt injection, hallucination, and scope creep. It is explicitly constrained to discuss batch data only, preventing exposure of source code, IP, or off-topic subjects.
@@ -128,17 +122,14 @@ Recalce features a built-in, context-aware AI Assistant powered by Groq (`llama-
 
 ### Backend & Distributed Systems
 * **Python 3.10+**
-* **FastAPI** (Async API Gateway)
-* **Celery** (Distributed Task Queue)
-* **Redis** (Message Broker)
+* **FastAPI** (Async API Gateway & BackgroundTasks)
 * **Uvicorn** (ASGI Server)
-* **Groq SDK** (LLM Tool Calling)
+* **OpenAI SDK** (Gemini-compatible LLM Tool Calling)
 
 ### Data & Machine Learning
 * **PostgreSQL / Neon** (ACID Relational Database)
 * **SQLAlchemy & Alembic** (ORM & Migrations)
 * **Scikit-Learn, Pandas, NumPy** (ML Feature extraction & Isolation Forest)
-* **Backblaze B2** (S3-Compatible Object Storage)
 * **Pydantic v2** (Row-level schema validation)
 
 ### Frontend
@@ -154,13 +145,7 @@ Recalce features a built-in, context-aware AI Assistant powered by Groq (`llama-
 Ensure you have a `.env` file in the root directory containing your credentials:
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/recalce
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-B2_APPLICATION_KEY_ID=your_b2_key_id
-B2_APPLICATION_KEY=your_b2_key
-B2_BUCKET_NAME=your_b2_bucket
-B2_ENDPOINT_URL=your_b2_endpoint
-GROQ_API_KEY=your_groq_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 ### 1. Install Dependencies
@@ -188,13 +173,7 @@ cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-**Terminal 2: Celery Worker**
-```bash
-cd backend
-celery -A app.core.celery_app worker --pool=solo --loglevel=info
-```
-
-**Terminal 3: React Frontend**
+**Terminal 2: React Frontend**
 ```bash
 cd frontend
 npm run dev

@@ -1,7 +1,7 @@
 """
 app/models/reconciliation_result.py
--------------------------------------
-ReconciliationResult -- one row per matched or unreconciled pair.
+
+ReconciliationResult - one row per matched or unreconciled pair.
 
 - For one-to-one matches: internal_txn_id and bank_txn_id are both set.
 - For unreconciled internal records: bank_txn_id is NULL.
@@ -78,7 +78,7 @@ class ReconciliationResult(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # -- Relationships ----------------------------------------------------------
+    # Relationships
     batch: Mapped["ReconciliationBatch"] = relationship(
         "ReconciliationBatch", back_populates="results"
     )
@@ -112,7 +112,7 @@ class BatchValidationError(Base):
     row_number: Mapped[int] = mapped_column(Integer, nullable=False)
     error_message: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # -- Relationships ----------------------------------------------------------
+    # Relationships 
     batch: Mapped["ReconciliationBatch"] = relationship(
         "ReconciliationBatch", back_populates="validation_errors"
     )
@@ -166,7 +166,7 @@ class ReconciliationGroup(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # -- Relationships ----------------------------------------------------------
+    # Relationships 
     batch: Mapped["ReconciliationBatch"] = relationship(
         "ReconciliationBatch", back_populates="groups"
     )
@@ -203,7 +203,7 @@ class ReconciliationGroupMember(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # -- Relationships ----------------------------------------------------------
+    # Relationships 
     group: Mapped["ReconciliationGroup"] = relationship(
         "ReconciliationGroup", back_populates="members"
     )

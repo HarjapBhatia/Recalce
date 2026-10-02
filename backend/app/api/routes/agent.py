@@ -1,6 +1,6 @@
 """
 app/api/routes/agent.py
------------------------
+
 QnA Agent endpoint using Groq and function calling.
 """
 
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agent"])
 
-# ── Model Auto-Discovery ───────────────────────────────────────────────────────
+# Model Auto-Discovery 
 # Resolved once at startup and cached for the lifetime of the process.
 
 _resolved_model: str | None = None
@@ -211,7 +211,7 @@ TOOLS = [
 
 SYSTEM_PROMPT = """You are Recalce Assistant, a senior financial reconciliation analyst embedded in the Recalce dashboard. You help finance teams understand the health, accuracy, and risk profile of their payment reconciliation batches in plain, actionable language.
 
--=== AGENT BEHAVIOR ===
+=== AGENT BEHAVIOR ===
 
 You are a direct, analytical agent. When you retrieve data:
 1. Present the data clearly using a numbered list.

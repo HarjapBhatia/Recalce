@@ -51,7 +51,7 @@ export default function App() {
     return () => clearTimeout(searchTimer.current)
   }, [searchQuery])
 
-  // ── Core fetch ──────────────────────────────────────────────────────────────
+  // Core fetch 
   const fetchResults = useCallback(async (batchId, opts = {}) => {
     if (!batchId) return
     setLoadingResults(true)
@@ -102,7 +102,7 @@ export default function App() {
     setPage(1)
   }, [activeTab, sortOrder, debouncedSearch])
 
-  // ── Action handlers ─────────────────────────────────────────────────────────
+  // Action handlers
   async function handleMarkMatched(resultId) {
     try {
       await markMatched(resultId)
@@ -133,7 +133,7 @@ export default function App() {
     return exportRows
   }
 
-  // ── After a new reconciliation run ──────────────────────────────────────────
+  // After a new reconciliation run 
   async function handleBatchComplete() {
     const batches = await listBatches()
     const newest = batches.find(b => b.status === 'COMPLETE')
@@ -177,7 +177,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Transactions table — now purely a presentation layer */}
+        {/* Transactions table - now purely a presentation layer */}
         <TransactionsTable
           results={results}
           loading={loadingResults}

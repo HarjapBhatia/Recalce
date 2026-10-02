@@ -3,8 +3,7 @@
 Importing this package eagerly registers every ORM model with the
 declarative Base so that string-based relationship() references
 (e.g. relationship("InternalLedger")) can be resolved at mapper
-configuration time.  This is critical inside Celery workers, which
-do not otherwise import all model modules.
+configuration time.
 """
 
 from app.models.internal_ledger import InternalLedger          # noqa: F401

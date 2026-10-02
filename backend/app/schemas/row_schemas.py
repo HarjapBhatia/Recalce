@@ -1,10 +1,10 @@
 """
 app/schemas/row_schemas.py
---------------------------
+
 Pydantic models for validating individual CSV rows during ingestion.
 
-Key rules (per IMPLEMENTATION_CONTEXT.md §7):
-- amount: raw string → Decimal (never through float)
+Key rules for parsing and validation:
+- amount: raw string -> Decimal (never through float)
 - timestamp: permissive parsing via python-dateutil
 - extra columns: ignored (extra="ignore")
 - Dirty values like "$52.00" or "52,00" are cleaned before parsing

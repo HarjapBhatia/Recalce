@@ -1,7 +1,7 @@
 """
 app/tasks/ml_triage.py
 -----------------------
-Celery task: Stage 3 of the processing chain.
+Pipeline Stage 3: ML Anomaly Triage.
 
 Responsibility:
   1. Transition the batch from MATCHING to ML_TRIAGE.
@@ -10,8 +10,8 @@ Responsibility:
   3. Build separate feature matrices for matched and unmatched records using
      the functions in ml/features.py.
   4. Score each record using the pre-loaded IsolationForest models held in
-     app/services/anomaly_service. The models are loaded once at worker
-     startup (not here) via the worker_process_init signal in celery_app.py.
+     app/services/anomaly_service. The models are loaded once at FastAPI
+     startup via the lifespan handler in main.py.
   5. Write is_anomaly=True and a human-readable anomaly_reason to any result
      that the model predicts as anomalous (-1 from model.predict()).
   6. Transition the batch from ML_TRIAGE to COMPLETE and commit.
@@ -43,8 +43,6 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.celery_app import celery_app
-from app.db.session import SessionLocal
 from app.models.reconciliation_batch import BatchStatus, ReconciliationBatch
 from app.models.reconciliation_result import ReconciliationResult, ResultStatus
 from app.services import anomaly_service
@@ -167,29 +165,24 @@ def _score_and_flag(
 
 
 # ---------------------------------------------------------------------------
-# Celery task
+# Pipeline step (plain function, called by pipeline_service.py)
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(bind=True, name="tasks.ml_triage")
-def ml_triage(self, batch_id: str) -> str:
+def run_ml_triage_step(db: Session, batch_id: uuid.UUID) -> None:
     """
     Score all reconciliation results for a batch using the IsolationForest models.
 
-    This is Stage 3 of the Celery task chain: ingest -> match -> ml_triage.
+    This is Stage 3 of the pipeline: ingest -> match -> ml_triage.
 
-    Receives batch_id as a string from the match task via the Celery chain.
-    Returns batch_id as a string (though nothing follows in the current chain).
+    Receives the shared DB session and batch_id from the pipeline orchestrator.
 
-    If the models were not loaded at startup (FileNotFoundError at worker
-    init), scoring is skipped and the batch still transitions to COMPLETE.
+    If the models were not loaded at startup (FileNotFoundError at boot),
+    scoring is skipped and the batch still transitions to COMPLETE.
     This prevents a missing model file from blocking all reconciliation.
     """
-    db: Session = SessionLocal()
-    batch_uuid = uuid.UUID(batch_id)
-
     try:
-        batch = db.get(ReconciliationBatch, batch_uuid)
+        batch = db.get(ReconciliationBatch, batch_id)
         if batch is None:
             raise ValueError(f"Batch {batch_id} not found in the database.")
 
@@ -202,7 +195,7 @@ def ml_triage(self, batch_id: str) -> str:
         # access r.internal_txn and r.bank_txn on each row.
         results: list[ReconciliationResult] = (
             db.query(ReconciliationResult)
-            .filter(ReconciliationResult.batch_id == batch_uuid)
+            .filter(ReconciliationResult.batch_id == batch_id)
             .options(
                 joinedload(ReconciliationResult.internal_txn),
                 joinedload(ReconciliationResult.bank_txn),
@@ -261,20 +254,16 @@ def ml_triage(self, batch_id: str) -> str:
         batch.status = BatchStatus.COMPLETE
         db.commit()
         logger.info("Batch complete: batch=%s", batch_id)
-        return batch_id
 
     except Exception as exc:
         db.rollback()
         try:
-            batch = db.get(ReconciliationBatch, batch_uuid)
+            batch = db.get(ReconciliationBatch, batch_id)
             if batch:
                 batch.status = BatchStatus.FAILED
                 batch.error_message = str(exc)
                 db.commit()
         except Exception:
             pass
-        logger.exception("ML triage task raised an unexpected error: batch=%s", batch_id)
+        logger.exception("ML triage raised an unexpected error: batch=%s", batch_id)
         raise
-
-    finally:
-        db.close()

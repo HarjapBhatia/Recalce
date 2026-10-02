@@ -69,19 +69,14 @@ from math import floor
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
 # Configuration defaults (overridden by matching_engine from settings)
-# ---------------------------------------------------------------------------
 
 FUZZY_THRESHOLD: float = 75.0      # Minimum RapidFuzz score to accept a merchant hint
 MAX_CANDIDATE_POOL: int = 50        # Hard cap; beyond this, escalate to UNDER_REVIEW
 MAX_GROUP_SIZE: int = 6             # Maximum internal transactions per bank deposit
 
 
-# ---------------------------------------------------------------------------
 # Input / output dataclasses
-# ---------------------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class CandidateRow:
@@ -130,15 +125,12 @@ class GroupMatch:
     ORM rows and updates InternalLedger / BankStatement statuses.
 
     Fields
-    ------
     bank_deposit     : the bank statement row this group resolves.
-    matched_members  : the internal transactions included in the match.
-                       Empty list when status == UNDER_REVIEW.
+    matched_members  : the internal transactions included in the match. Empty list when status == UNDER_REVIEW.
     status           : "MATCHED" or "UNDER_REVIEW".
     fee_deducted_cents: total_internal_cents - deposit_cents. Zero for UNDER_REVIEW.
     anomaly_reason   : human-readable reason string for UNDER_REVIEW cases.
-    review_metadata  : JSON string listing competing transaction_id combinations,
-                       populated only for AMBIGUOUS_SUBSET_SUM_TIE cases.
+    review_metadata  : JSON string listing competing transaction_id combinations, populated only for AMBIGUOUS_SUBSET_SUM_TIE cases.
     """
 
     bank_deposit: BankDeposit
@@ -149,11 +141,7 @@ class GroupMatch:
     review_metadata: str | None = None
 
 
-# ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
-
 _fuzz_module = None
 _fuzz_imported = False
 
@@ -209,16 +197,13 @@ def _branch_and_bound(
         If current_sum + suffix_sum[i] < s_min, no combination starting at
         index i can reach the minimum, so we prune the entire branch.
 
-    Parameters
-    ----------
+    Parameters:
     candidates : CandidateRow list, sorted descending by amount_cents.
     s_min      : minimum acceptable total in integer cents (the deposit amount).
-    s_max      : maximum acceptable total in integer cents
-                 (= floor(deposit / (1 - fee_tolerance))).
+    s_max      : maximum acceptable total in integer cents (= floor(deposit / (1 - fee_tolerance))).
     max_depth  : maximum subset size (MAX_GROUP_SIZE, default 6).
 
-    Returns
-    -------
+    Returns:
     List of index lists. Each inner list contains indices into `candidates`
     that form one valid subset. An empty outer list means no solution was found.
     """
@@ -272,11 +257,7 @@ def _confidence_score(deposit: BankDeposit, members: list[CandidateRow]) -> floa
     return (1.0 if is_exact else 0.0) - len(members) * 0.001
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
-
-
 def run_many_to_one_pass(
     unmatched_internal: list[CandidateRow],
     unmatched_bank: list[BankDeposit],
@@ -289,8 +270,7 @@ def run_many_to_one_pass(
     """
     Run the full 6-stage Many-to-One matching pipeline for one batch.
 
-    Parameters
-    ----------
+    Parameters:
     unmatched_internal     : internal ledger rows still PENDING after 1:1 passes.
     unmatched_bank         : bank deposit rows still PENDING after 1:1 passes.
     settlement_window_days : look-back window in days for temporal narrowing.
@@ -299,8 +279,7 @@ def run_many_to_one_pass(
     max_group_size         : maximum number of members per group (2 to N).
     fuzzy_threshold        : minimum RapidFuzz score to accept a merchant hint.
 
-    Returns
-    -------
+    Returns:
     groups : list[GroupMatch]
         All resolved and under-review groups, ready for persistence.
     consumed_internal_ids : set of db_id values for internal rows claimed by
@@ -326,7 +305,7 @@ def run_many_to_one_pass(
         by_merchant.setdefault(row.merchant_id, []).append(row)
 
     for deposit in unmatched_bank:
-        # ── Stage 1+2: Merchant identification then candidate narrowing ────────
+        # Stage 1+2: Merchant identification then candidate narrowing 
         # Run fuzzy merchant matching FIRST against all known merchant IDs so
         # that Stage 1 only gathers candidates from the correct merchant cluster.
         # The old order (Stage 1 across all merchants → Stage 2 narrow) caused
@@ -338,7 +317,7 @@ def run_many_to_one_pass(
 
         earliest = deposit.settlement_date - timedelta(days=settlement_window_days)
 
-        # ── Stage 2 (early): identify target merchant via fuzzy match ──────────
+        # Stage 2 (early): identify target merchant via fuzzy match 
         best_merchant: str | None = None
         best_score: float = 0.0
         for mid in by_merchant:
@@ -357,7 +336,7 @@ def run_many_to_one_pass(
             )
             continue
 
-        # ── Stage 1: Candidate narrowing (merchant-scoped) ────────────────────
+        # Stage 1: Candidate narrowing (merchant-scoped) 
         candidate_pool: list[CandidateRow] = [
             row
             for row in by_merchant[best_merchant]
@@ -371,7 +350,7 @@ def run_many_to_one_pass(
         if not candidate_pool:
             continue
 
-        # ── Stage 3: Pool cap ─────────────────────────────────────────────────
+        # Stage 3: Pool cap 
         if len(candidate_pool) > max_candidate_pool:
             logger.warning(
                 "Deposit %s: pool size %d > cap %d; escalating to UNDER_REVIEW.",
@@ -388,7 +367,7 @@ def run_many_to_one_pass(
             consumed_bank_ids.add(deposit.db_id)
             continue
 
-        # ── Stage 4: Branch-and-bound subset sum ──────────────────────────────
+        # Stage 4: Branch-and-bound subset sum 
         # Sort descending so the upper-bound prune in _branch_and_bound works.
         candidate_pool.sort(key=lambda r: r.amount_cents, reverse=True)
         solution_indices = _branch_and_bound(
@@ -403,7 +382,7 @@ def run_many_to_one_pass(
             for idx_list in solution_indices
         ]
 
-        # ── Stage 5: Strict ambiguity detection ───────────────────────────────
+        # Stage 5: Strict ambiguity detection 
         if len(solutions) == 1:
             members = solutions[0]
             total_cents = sum(m.amount_cents for m in members)
@@ -445,7 +424,7 @@ def run_many_to_one_pass(
                 len(solutions),
             )
 
-    # ── Stage 6: Global conflict resolution ───────────────────────────────────
+    # Stage 6: Global conflict resolution 
     # Build an index from internal_txn db_id -> list of MATCHED groups that claim it.
     matched_groups = [g for g in groups if g.status == "MATCHED"]
     txn_to_groups: dict[object, list[GroupMatch]] = {}

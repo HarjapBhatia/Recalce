@@ -1,26 +1,22 @@
 """
 app/services/anomaly_service.py
----------------------------------
+
 Loads pre-trained IsolationForest models and scores transactions for anomalies.
 
-Architecture
-------------
+Architecture:
 Two separate models are maintained because matched and unmatched records have
 different feature sets (different column counts), and a single IsolationForest
 instance expects a fixed input shape:
 
-  model_matched.pkl   -- 6 features: amount, hour_of_day, day_of_week,
-                          merchant_freq, fee_ratio, settle_delay
-  model_unmatched.pkl -- 5 features: amount, hour_of_day, day_of_week,
-                          merchant_freq, amount_zscore
+- model_matched.pkl : 6 features: amount, hour_of_day, day_of_week, merchant_freq, fee_ratio, settle_delay
+- model_unmatched.pkl : 5 features: amount, hour_of_day, day_of_week, merchant_freq, amount_zscore
 
-Both models are loaded exactly once per Celery worker process at startup via
-the `worker_process_init` signal in app/core/celery_app.py. They are then
-shared across all task invocations within that process. Loading once avoids
-the 50-100ms disk read penalty on every batch.
+Both models are loaded exactly once at FastAPI startup via the lifespan handler
+in app/main.py. They are then shared across all background task invocations
+within that process. Loading once avoids the 50-100ms disk read penalty on
+every batch.
 
-Threshold handling
-------------------
+Threshold handling:
 The IsolationForest models were calibrated during training using
 ml/calibration.py. The calibration stored the optimal score cutoff directly
 into `model.offset_` via `apply_score_threshold()`. This means calling
@@ -51,11 +47,9 @@ def load_models() -> None:
     """
     Deserialize both IsolationForest models from disk into module-level globals.
 
-    This must be called once before any scoring functions are used. The Celery
-    worker calls this via the worker_process_init signal in celery_app.py.
-    FastAPI workers do not call this because the upload endpoint itself does
-    not score records -- scoring is deferred entirely to the Celery ml_triage
-    task.
+    This must be called once before any scoring functions are used. The FastAPI
+    lifespan handler in main.py calls this at startup so models are cached
+    in-memory for all subsequent pipeline runs.
 
     Raises FileNotFoundError if the model files are missing from ml/models/.
     """
@@ -106,7 +100,6 @@ def predict_matched(features: np.ndarray) -> np.ndarray:
 def predict_unmatched(features: np.ndarray) -> np.ndarray:
     """
     Classify unmatched internal ledger records using the calibrated unmatched model.
-
     Returns an integer array of shape (n_samples,) where:
       -1 means the record is flagged as an anomaly
       +1 means the record appears normal
@@ -118,7 +111,6 @@ def predict_unmatched(features: np.ndarray) -> np.ndarray:
 def score_matched(features: np.ndarray) -> list[float]:
     """
     Return raw anomaly scores for matched records.
-
     Lower scores indicate more anomalous records. These are the raw
     score_samples values, not predictions. Useful for logging and debugging
     when you want to see how close a record is to the decision boundary.
@@ -130,7 +122,6 @@ def score_matched(features: np.ndarray) -> list[float]:
 def score_unmatched(features: np.ndarray) -> list[float]:
     """
     Return raw anomaly scores for unmatched records.
-
     Lower scores indicate more anomalous records.
     """
     _assert_loaded()

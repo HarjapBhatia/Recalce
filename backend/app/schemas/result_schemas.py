@@ -1,6 +1,6 @@
 """
 app/schemas/result_schemas.py
------------------------------
+
 Pydantic response schemas for the reconciliation results endpoint.
 
 These schemas define the shape of the GET /api/v1/results/{batch_id}
@@ -37,7 +37,6 @@ class ResultSummary(BaseModel):
 class ResultItem(BaseModel):
     """
     One reconciliation result row with joined transaction details.
-
     Internal-side fields are None for unreconciled bank-only records.
     Bank-side fields are None for unreconciled internal-only records.
     """
