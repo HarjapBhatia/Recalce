@@ -1,11 +1,25 @@
 /**
  * api.js
  * Centralises all calls to the Recalce backend.
- * Base URL is hardcoded to localhost:8000 for local development.
+ * Reads the auth token from localStorage and attaches it as a Bearer header.
  */
 
 const rawBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 const BASE = rawBase.endsWith('/api/v1') ? rawBase : `${rawBase.replace(/\/+$/, '')}/api/v1`
+
+/** Retrieve the stored JWT from localStorage. */
+function getToken() {
+  return localStorage.getItem('recalce_token')
+}
+
+/** Build fetch headers, adding Authorization if a token is available. */
+function headers(extra = {}) {
+  const tok = getToken()
+  return {
+    ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+    ...extra,
+  }
+}
 
 /** POST /upload - multipart, both CSV files */
 export async function uploadFiles(internalFile, bankFile) {
@@ -13,7 +27,7 @@ export async function uploadFiles(internalFile, bankFile) {
   form.append('internal_ledger', internalFile)
   form.append('bank_statement', bankFile)
 
-  const res = await fetch(`${BASE}/upload`, { method: 'POST', body: form })
+  const res = await fetch(`${BASE}/upload`, { method: 'POST', body: form, headers: headers() })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Upload failed')
@@ -23,7 +37,7 @@ export async function uploadFiles(internalFile, bankFile) {
 
 /** GET /status/{batch_id} */
 export async function getBatchStatus(batchId) {
-  const res = await fetch(`${BASE}/status/${batchId}`)
+  const res = await fetch(`${BASE}/status/${batchId}`, { headers: headers() })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Status fetch failed')
@@ -33,7 +47,7 @@ export async function getBatchStatus(batchId) {
 
 /** GET /batches — list all batches, newest first */
 export async function listBatches() {
-  const res = await fetch(`${BASE}/batches`)
+  const res = await fetch(`${BASE}/batches`, { headers: headers() })
   if (!res.ok) return []
   return res.json() // BatchListItem[]
 }
@@ -44,7 +58,7 @@ export async function getResults(batchId, params = {}) {
   for (const [key, value] of Object.entries(params)) {
     if (value) url.searchParams.append(key, value)
   }
-  const res = await fetch(url)
+  const res = await fetch(url, { headers: headers() })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Results fetch failed')
@@ -54,7 +68,10 @@ export async function getResults(batchId, params = {}) {
 
 /** POST /results/{result_id}/match */
 export async function markMatched(resultId) {
-  const res = await fetch(`${BASE}/results/${resultId}/match`, { method: 'POST' })
+  const res = await fetch(`${BASE}/results/${resultId}/match`, {
+    method: 'POST',
+    headers: headers(),
+  })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Failed to mark as matched')
@@ -64,7 +81,7 @@ export async function markMatched(resultId) {
 
 /** GET /batches/{batch_id}/report */
 export async function getBatchReport(batchId) {
-  const res = await fetch(`${BASE}/batches/${batchId}/report`)
+  const res = await fetch(`${BASE}/batches/${batchId}/report`, { headers: headers() })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Report fetch failed')
@@ -76,7 +93,7 @@ export async function getBatchReport(batchId) {
 export async function chatWithAgent(batchId, messages) {
   const res = await fetch(`${BASE}/agent/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ batch_id: batchId, messages }),
   })
   if (!res.ok) {

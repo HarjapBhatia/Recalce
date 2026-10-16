@@ -17,6 +17,8 @@ from app.schemas.upload_schema import UploadResponse
 from app.core.config import settings
 from app.models.reconciliation_batch import ReconciliationBatch, BatchStatus
 from app.services.pipeline_service import run_reconciliation_pipeline
+from app.api.deps import get_current_user
+from app.models.user import User, UserRole
 
 router = APIRouter(tags=["upload"])
 
@@ -27,6 +29,7 @@ async def upload_files(
     internal_ledger: UploadFile = File(..., description="Internal ledger CSV"),
     bank_statement:  UploadFile = File(..., description="Bank statement CSV"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> UploadResponse:
     """
     Upload internal ledger and bank statement CSVs for reconciliation.
@@ -52,11 +55,19 @@ async def upload_files(
 
     batch_id = uuid.uuid4()
 
+    # Default visibility to assigned analyst only
+    # If uploaded by an ANALYST, assign directly to that analyst.
+    assigned_analyst = current_user.id if current_user.role == UserRole.ANALYST else None
+
     batch = ReconciliationBatch(
         id=batch_id,
         internal_file_content=internal_bytes,
         bank_file_content=bank_bytes,
         status=BatchStatus.PENDING,
+        organization_id=current_user.organization_id,
+        created_by_user_id=current_user.id,
+        assigned_analyst_id=assigned_analyst,
+        is_org_public=False,
     )
     db.add(batch)
     db.commit()

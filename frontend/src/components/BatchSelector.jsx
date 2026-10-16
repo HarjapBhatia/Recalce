@@ -21,11 +21,10 @@ export default function BatchSelector({ selectedBatchId, onSelect }) {
     try {
       const data = await listBatches()
       setBatches(data)
-      // Do not auto-select, let user pick from dropdown
-      // if (!selectedBatchId && data.length > 0) {
-      //   const completed = data.find(b => b.status === 'COMPLETE')
-      //   if (completed) onSelect(completed.batch_id)
-      // }
+      if (!selectedBatchId && data.length > 0) {
+        const completed = data.find(b => b.status === 'COMPLETE')
+        if (completed) onSelect(completed.batch_id)
+      }
     } catch {
       // silently fail
     } finally {

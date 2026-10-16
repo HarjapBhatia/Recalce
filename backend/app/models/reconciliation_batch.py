@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, LargeBinary, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, LargeBinary, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship, deferred
 
@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     from app.models.bank_statement import BankStatement
     from app.models.internal_ledger import InternalLedger
     from app.models.reconciliation_result import BatchValidationError, ReconciliationGroup, ReconciliationResult
+    from app.models.organization import Organization
+    from app.models.user import User
 
 
 class BatchStatus(str, enum.Enum):
@@ -42,8 +44,8 @@ class ReconciliationBatch(Base):
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    internal_file_key: Mapped[str] = mapped_column(String, nullable=True)   # legacy (unused)
-    bank_file_key: Mapped[str] = mapped_column(String, nullable=True)       # legacy (unused)
+    # Note: internal_file_key / bank_file_key (B2 object keys) were removed
+    # when cloud storage was dropped in favour of temporary DB column storage.
     # Temporary storage for uploaded CSV file contents.
     # Deferred so regular queries never load the blob data.
     # Cleared to NULL immediately after pipeline processing completes.
@@ -78,3 +80,41 @@ class ReconciliationBatch(Base):
     groups: Mapped[list["ReconciliationGroup"]] = relationship(
         "ReconciliationGroup", back_populates="batch", cascade="all, delete-orphan"
     )
+
+    # Multi-tenant ownership and assignment (added in Stage 1 RBAC)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    assigned_analyst_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    is_org_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Relationships for multi-tenant fields
+    organization: Mapped["Organization | None"] = relationship(
+        "Organization",
+        back_populates="batches",
+        foreign_keys=[organization_id],
+    )
+    created_by: Mapped["User | None"] = relationship(
+        "User",
+        back_populates="created_batches",
+        foreign_keys=[created_by_user_id],
+    )
+    assigned_analyst: Mapped["User | None"] = relationship(
+        "User",
+        back_populates="assigned_batches",
+        foreign_keys=[assigned_analyst_id],
+    )
+

@@ -1,4 +1,5 @@
 import styles from './SummaryCards.module.css'
+import { SpotlightCard } from './ui/SpotlightCard'
 
 function formatCount(n) {
   if (n == null) return '0'
@@ -25,12 +26,12 @@ export default function SummaryCards({ summary, tabCounts, report }) {
     // Skeleton state
     return (
       <section className={styles.grid}>
-        <div className={`card ${styles.card}`}>
+        <SpotlightCard className={styles.card}>
           <div className={styles.skeleton} />
-        </div>
-        <div className={`card ${styles.card}`}>
+        </SpotlightCard>
+        <SpotlightCard className={styles.card}>
           <div className={styles.skeleton} />
-        </div>
+        </SpotlightCard>
       </section>
     )
   }
@@ -59,7 +60,7 @@ export default function SummaryCards({ summary, tabCounts, report }) {
   return (
     <section className={styles.grid}>
       {/* Batch Summary Card */}
-      <div className={`card ${styles.card}`}>
+      <SpotlightCard className={styles.card}>
         <h3 className={styles.cardTitle}>
           <span className="material-symbols-outlined" style={{ color: 'var(--secondary)', fontSize: '20px' }}>pie_chart</span>
           Batch Summary
@@ -77,22 +78,22 @@ export default function SummaryCards({ summary, tabCounts, report }) {
             </div>
             <span className={styles.statValue}>{formatCount(totalRecords)}</span>
           </div>
-          <div className={`${styles.statCell} ${styles.borderAccentNeutral}`}>
+          <div className={styles.statCell}>
             <span className={styles.statLabel}>Matched</span>
             <span className={styles.statValue}>{formatCount(totalMatched)}</span>
           </div>
-          <div className={`${styles.statCell} ${styles.borderAccentError}`}>
+          <div className={styles.statCell}>
             <span className={styles.statLabel}>
               Unreconciled
               {totalUnderReview > 0 && (
                 <span className={styles.underReviewBracket}> ({formatCount(totalUnderReview)} under review)</span>
               )}
             </span>
-            <span className={`${styles.statValue} ${styles.errorText}`}>{formatCount(totalUnreconciled)}</span>
+            <span className={styles.statValue}>{formatCount(totalUnreconciled)}</span>
           </div>
-          <div className={`${styles.statCell} ${styles.borderAccentWarning}`}>
+          <div className={styles.statCell}>
             <span className={styles.statLabel}>Anomalies</span>
-            <span className={`${styles.statValue} ${styles.warningText}`}>{formatCount(totalAnomalies)}</span>
+            <span className={styles.statValue}>{formatCount(totalAnomalies)}</span>
           </div>
 
           {/* Report metrics — plain cells, no left border color */}
@@ -109,10 +110,10 @@ export default function SummaryCards({ summary, tabCounts, report }) {
             <span className={styles.statValue}>{formatSeconds(report?.processing_time_seconds)}</span>
           </div>
         </div>
-      </div>
+      </SpotlightCard>
 
       {/* Reconciliation Check Card */}
-      <div className={`card ${styles.card} ${styles.checkCard}`}>
+      <SpotlightCard className={`${styles.card} ${styles.checkCard}`}>
         <h3 className={styles.cardTitle}>
           <span className="material-symbols-outlined" style={{ color: 'var(--secondary)', fontSize: '20px' }}>verified</span>
           Reconciliation Check
@@ -142,7 +143,7 @@ export default function SummaryCards({ summary, tabCounts, report }) {
             <span className={styles.warnText}>{formatCount(totalUnreconciled)} unreconciled record{totalUnreconciled !== 1 ? 's' : ''} require review</span>
           </div>
         )}
-      </div>
+      </SpotlightCard>
     </section>
   )
 }

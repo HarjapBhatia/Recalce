@@ -26,6 +26,8 @@ from app.schemas.upload_schema import (
     BatchReportResponse,
     ExceptionRecord,
 )
+from app.api.deps import get_current_user, require_batch_access
+from app.models.user import User, UserRole
 
 router = APIRouter(tags=["status"])
 
@@ -41,21 +43,12 @@ router = APIRouter(tags=["status"])
 def get_status(
     batch_id: uuid.UUID,
     db: Session = Depends(get_db),
+    batch: ReconciliationBatch = Depends(require_batch_access),
 ) -> BatchStatusResponse:
     """
     Poll the current status of a reconciliation batch.
     Returns 404 if the batch_id does not exist.
     """
-    batch = db.execute(
-        select(ReconciliationBatch).where(ReconciliationBatch.id == batch_id)
-    ).scalar_one_or_none()
-
-    if batch is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Batch {batch_id} not found.",
-        )
-
     return BatchStatusResponse(
         batch_id=batch.id,
         status=batch.status,
@@ -65,16 +58,31 @@ def get_status(
 
 
 @router.get("/batches", response_model=list[BatchListItem])
-def list_batches(db: Session = Depends(get_db)) -> list[BatchListItem]:
+def list_batches(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[BatchListItem]:
     """
     List all reconciliation batches, most recent first.
     Used by the frontend history view to show past upload runs.
     """
-    batches = db.execute(
-        select(ReconciliationBatch).order_by(
-            ReconciliationBatch.uploaded_at.desc()
+    stmt = select(ReconciliationBatch).order_by(ReconciliationBatch.uploaded_at.desc())
+    
+    if current_user.role == UserRole.SUPER_ADMIN:
+        pass
+    elif current_user.role == UserRole.ADMIN:
+        stmt = stmt.where(ReconciliationBatch.organization_id == current_user.organization_id)
+    else:  # ANALYST
+        from sqlalchemy import or_
+        stmt = stmt.where(
+            ReconciliationBatch.organization_id == current_user.organization_id,
+            or_(
+                ReconciliationBatch.is_org_public == True,
+                ReconciliationBatch.assigned_analyst_id == current_user.id,
+            ),
         )
-    ).scalars().all()
+
+    batches = db.execute(stmt).scalars().all()
 
     return [
         BatchListItem(
@@ -91,6 +99,7 @@ def list_batches(db: Session = Depends(get_db)) -> list[BatchListItem]:
 def get_batch_report(
     batch_id: uuid.UUID,
     db: Session = Depends(get_db),
+    batch: ReconciliationBatch = Depends(require_batch_access),
 ) -> BatchReportResponse:
     """
     Return the batch report artifact for a completed reconciliation run.
@@ -103,15 +112,6 @@ def get_batch_report(
     - exception_list: every UNRECONCILED or UNDER_REVIEW result with its reason
     - anomaly_count and anomaly_breakdown grouped by anomaly_reason text
     """
-    batch = db.execute(
-        select(ReconciliationBatch).where(ReconciliationBatch.id == batch_id)
-    ).scalar_one_or_none()
-
-    if batch is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Batch {batch_id} not found.",
-        )
 
     if batch.status != BatchStatus.COMPLETE:
         raise HTTPException(

@@ -561,8 +561,15 @@ async def call_llm_with_retry(client, kwargs: dict, max_retries: int = 4):
 
 # Endpoint
 
+from app.models.user import User
+from app.api.deps import get_current_user, require_batch_access
+
 @router.post("/chat", response_model=ChatResponse)
-async def agent_chat(req: ChatRequest, db: Session = Depends(get_db)):
+async def agent_chat(
+    req: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     client = get_llm_client()
     if not client:
         raise HTTPException(
@@ -570,9 +577,8 @@ async def agent_chat(req: ChatRequest, db: Session = Depends(get_db)):
             detail="Gemini client is not configured. Please set GEMINI_API_KEY.",
         )
 
-    batch = db.get(ReconciliationBatch, req.batch_id)
-    if not batch:
-        raise HTTPException(status_code=404, detail="Batch not found")
+    # Validate access and existence
+    batch = require_batch_access(req.batch_id, current_user, db)
 
     resolved_model = await resolve_model()
 

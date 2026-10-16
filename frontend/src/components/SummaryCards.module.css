@@ -44,18 +44,6 @@
   justify-content: center;
 }
 
-.borderAccentNeutral {
-  border-left: 4px solid var(--outline-variant);
-}
-
-.borderAccentError {
-  border-left: 4px solid var(--error);
-}
-
-.borderAccentWarning {
-  border-left: 4px solid var(--primary-container);
-}
-
 .statLabel {
   font-size: 12px;
   font-weight: 500;
@@ -149,7 +137,9 @@
 
 /* Reconciliation check card */
 .checkCard {
-  justify-content: space-between;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
 }
 
 .checkRows {
@@ -157,7 +147,8 @@
   flex-direction: column;
   gap: 16px;
   flex: 1;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-top: 4px;
 }
 
 .checkRow {

@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     SETTLEMENT_WINDOW_DAYS: int = 3
     FEE_TOLERANCE_MAX: float = 0.03   # 3% maximum fee
     MAX_ROWS_PER_UPLOAD: int = 50_000
-    MAX_CANDIDATE_POOL: int = 50
-    MAX_GROUP_SIZE: int = 6
+    MAX_CANDIDATE_POOL: int = 200
+    MAX_GROUP_SIZE: int = 25
 
     # LLM and QnA Agent
     GEMINI_API_KEY: str = ""

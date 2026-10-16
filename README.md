@@ -95,7 +95,7 @@ The matching engine is deterministic and operates via a strict, cascading 5-pass
 1. **Pass 1 (Exact)**: Matches identical IDs, amounts, and calendar days.
 2. **Pass 2 (Date-Shifted)**: Matches identical amounts delayed by 1 to 3 business days (configurable).
 3. **Pass 3 (Fee-Adjusted)**: Matches transactions where the bank deposit is reduced by a standard gateway processing fee (e.g., 2.9%).
-4. **Pass 4 (Many-to-One / N:1)**: Solves for lumped gateway payouts. Uses RapidFuzz for merchant clustering and a **Branch-and-Bound Subset Sum Algorithm (DFS)** to find internal transactions that exactly sum to a single bank deposit. Ambiguous combinations are safely routed to manual review.
+4. **Pass 4 (Many-to-One / N:1)**: Solves for lumped gateway payouts. Uses RapidFuzz for merchant clustering and an adaptive **Subset Sum Engine (Strategy B: Dynamic Programming + Strategy C: Meet-in-the-Middle)** to find internal transactions that sum to a single bank deposit within fee tolerance. Ambiguous combinations are safely routed to manual review.
 5. **Pass 5 (Unreconciled)**: Flags remaining orphaned rows for investigation.
 
 

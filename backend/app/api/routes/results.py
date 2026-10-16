@@ -33,28 +33,30 @@ from app.schemas.result_schemas import (
     ResultItem,
     ValidationErrorItem,
 )
+from app.api.deps import require_batch_access, get_current_user
+from app.models.user import User
 
 router = APIRouter(tags=["results"])
+
 
 @router.post("/results/{result_id}/match", response_model=ResultItem)
 def mark_matched(
     result_id: uuid.UUID,
     db: Session = Depends(get_db),
     transaction_ids: Optional[list[str]] = Body(default=None),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Resolve an UNDER_REVIEW result:
-    - If transaction_ids are provided (ambiguous group): link those specific
-      internal ledger rows as GroupMembers, mark them MATCHED, and flip the
-      bank-side result row to MATCHED.
-    - If no transaction_ids are given (simple review): just flip the result
-      row to MATCHED (original behaviour for 1:1 anomaly reviews).
+    Resolve an UNDER_REVIEW result.
     """
     result = db.execute(
         select(ReconciliationResult).where(ReconciliationResult.id == result_id)
     ).scalar_one_or_none()
     if not result:
         raise HTTPException(status_code=404, detail="Result not found")
+
+    # Verify batch access (raises 403/404 if denied)
+    require_batch_access(result.batch_id, current_user, db)
 
     if transaction_ids:
         # Ambiguous group resolution 
@@ -126,17 +128,8 @@ def get_results(
     sort: str | None = None,
     tab: str = "all",
     db: Session = Depends(get_db),
+    batch: ReconciliationBatch = Depends(require_batch_access),
 ) -> ResultsResponse:
-    batch = db.execute(
-        select(ReconciliationBatch).where(ReconciliationBatch.id == batch_id)
-    ).scalar_one_or_none()
-
-    if batch is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Batch {batch_id} not found.",
-        )
-
     if batch.status != BatchStatus.COMPLETE:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

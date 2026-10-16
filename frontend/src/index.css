@@ -1,5 +1,10 @@
 /* Recalce - Global Styles */
 
+html {
+  scroll-behavior: smooth;
+}
+
+
 /* Design tokens */
 :root {
   --surface: #fdf9f4;
@@ -39,6 +44,7 @@
   --shadow-2: 0px 8px 30px rgba(0, 0, 0, 0.08);
 
   --font: 'Hanken Grotesk', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Menlo', monospace;
   --container-width: 85%;
   --container-max: 1200px;
 }

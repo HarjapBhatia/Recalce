@@ -1,64 +1,232 @@
+/* TopNav.module.css — Linear/Stripe 56px institutional nav bar */
+
 .nav {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  z-index: 50;
-  height: 64px;
-  background: var(--surface-container-lowest);
+  z-index: 100;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--outline-variant);
   display: flex;
   align-items: center;
   justify-content: center;
+ transition: border-color 0.3s ease, box-shadow 0.3s ease; border-bottom: 1px solid transparent; }
+.navScrolled {
+  border-bottom: 1px solid var(--outline-variant);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
 
+/* ── Inner container ── */
 .inner {
-  width: var(--container-width);
-  max-width: var(--container-max);
-  padding: 0 40px;
+  width: 100%;
+  max-width: 1280px;
+  padding: 0 32px;
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: 0;
+  height: 56px;
 }
 
 @media (max-width: 768px) {
   .inner {
-    width: 100%;
     padding: 0 16px;
   }
 }
 
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 20px;
+/* ── Brand / Logo ── */
+.brand {
+  font-size: 15px;
   font-weight: 700;
-  line-height: 28px;
-  color: var(--primary);
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
   flex-shrink: 0;
+  margin-right: 32px;
+  text-decoration: none;
+  transition: opacity 0.15s;
 }
 
-.wordmark {
-  font-weight: 700;
-  letter-spacing: -0.01em;
+.brand:hover {
+  opacity: 0.7;
 }
 
+/* ── Nav links (centred group) ── */
 .links {
   display: flex;
   align-items: center;
-  height: 64px;
+  height: 56px;
+  gap: 4px;
 }
 
-.activeLink {
-  height: 64px;
-  padding: 0 16px;
+.link {
+  height: 56px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+  position: relative;
+}
+
+.link:hover {
+  color: var(--on-surface);
+}
+
+.linkActive {
+  color: var(--primary);
+  border-bottom-color: var(--primary-container);
+  font-weight: 600;
+}
+
+/* ── Spacer ── */
+.spacer {
+  flex: 1;
+}
+
+/* ── Right: user context section ── */
+.userSection {
   display: flex;
   align-items: center;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--primary);
-  border-bottom: 3px solid var(--primary-container);
-  padding-bottom: 1px;
-  transition: color 0.15s;
+  gap: 10px;
+  flex-shrink: 0;
 }
+
+/* Org name */
+.orgName {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Role pill — coloured inline chip */
+.rolePill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: var(--pill-bg);
+  color: var(--pill-color);
+  cursor: default;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+.rolePill:hover {
+  background: var(--pill-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.rolePillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 6px;
+  opacity: 0.8;
+}
+.rolePillText {
+  line-height: 1;
+}
+
+/* Avatar initials circle */
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-container-high);
+  border: 1px solid var(--outline-variant);
+  color: var(--on-surface);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Sign out button */
+.logoutBtn {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  padding: 4px 10px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--outline-variant);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background-color 0.12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.logoutBtn:hover {
+  color: var(--error);
+  border-color: var(--error);
+  background: var(--error-container);
+}
+
+/* ── Responsive: hide org name on small screens ── */
+@media (max-width: 640px) {
+  .orgName {
+    display: none;
+  }
+  .rolePill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: var(--pill-bg);
+  color: var(--pill-color);
+  cursor: default;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+.rolePill:hover {
+  background: var(--pill-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.rolePillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 6px;
+  opacity: 0.8;
+}
+.rolePillText {
+  line-height: 1;
+}
+  .inner {
+    gap: 8px;
+  }
+}
+
